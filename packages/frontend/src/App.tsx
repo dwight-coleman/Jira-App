@@ -1,9 +1,8 @@
-import { ThemeProvider, CssBaseline } from '@mui/material';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'react-hot-toast';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { Box, CircularProgress } from '@mui/material';
 
-import { theme } from './theme';
 import Layout from './components/layout/Layout';
 import Dashboard from './pages/dashboard/Dashboard';
 import TicketsPage from './pages/tickets/TicketsPage';
@@ -13,22 +12,38 @@ import ApplicationsPage from './pages/applications/ApplicationsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import { useAuthStore } from './hooks/useAuthStore';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+import { userApi } from './services/api';
 
 function AppRoutes() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, login } = useAuthStore();
+
+  const { data: demoUser, isError } = useQuery({
+    queryKey: ['demo-user'],
+    queryFn: () => userApi.getAll().then((r) => r.data[0]),
+    enabled: !isAuthenticated,
+    retry: 1,
+  });
+
+  useEffect(() => {
+    if (isAuthenticated) return;
+    // For demo purposes, auto-login as the first seeded user so foreign-key-backed
+    // actions (comments, assignments, etc.) reference a real user row.
+    if (demoUser) {
+      login({ id: demoUser.id, email: demoUser.email, name: demoUser.name, role: demoUser.role }, 'demo-token');
+    } else if (isError) {
+      login(
+        { id: 'demo-user', email: 'demo@jira-executive.local', name: 'Demo User', role: 'Admin' },
+        'demo-token'
+      );
+    }
+  }, [isAuthenticated, demoUser, isError, login]);
+
   if (!isAuthenticated) {
-    // For demo purposes, auto-login with mock user
-    return <Navigate to="/dashboard" replace />;
+    return (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
   }
   return (
     <Routes>
@@ -48,23 +63,5 @@ function AppRoutes() {
 }
 
 export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BrowserRouter>
-          <AppRoutes />
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              duration: 4000,
-              style: { background: '#363636', color: '#fff' },
-              success: { iconTheme: { primary: '#4caf50', secondary: '#fff' } },
-              error: { iconTheme: { primary: '#f44336', secondary: '#fff' } },
-            }}
-          />
-        </BrowserRouter>
-      </ThemeProvider>
-    </QueryClientProvider>
-  );
+  return <AppRoutes />;
 }

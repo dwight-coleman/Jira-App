@@ -31,7 +31,10 @@ export const useAuthStore = create<AuthState>()(
       updateUser: (updates) => set((state) => ({ user: state.user ? { ...state.user, ...updates } : null })),
     }),
     {
-      name: 'auth-storage',
+      // v2: the demo auto-login now uses a real seeded user id (needed for
+      // FK-backed actions like comments) instead of a fabricated 'demo-user' id.
+      // Renamed so any session persisted under the old key re-authenticates.
+      name: 'auth-storage-v2',
       partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated, accessToken: state.accessToken }),
     }
   )

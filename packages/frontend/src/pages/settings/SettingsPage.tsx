@@ -27,10 +27,6 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  ExpandMoreIcon,
   Tabs,
   Tab,
   Slider,
@@ -58,6 +54,7 @@ import {
 } from '@mui/icons-material';
 import api from '../../services/api';
 import { format } from 'date-fns';
+import { useThemeStore } from '../../hooks/useThemeMode';
 
 export default function SettingsPage() {
   const { data: settings, isLoading } = useQuery({
@@ -65,6 +62,7 @@ export default function SettingsPage() {
     queryFn: () => api.get('/settings').then(r => r.data),
   });
 
+  const { mode, setMode } = useThemeStore();
   const [tab, setTab] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -476,12 +474,35 @@ export default function SettingsPage() {
               <CardContent>
                 <Typography variant="h6" sx={{ fontWeight: 600, mb: 3 }}>Theme</Typography>
                 <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-                  <Button variant="outlined" startIcon={<VisibilityIcon />}>Light</Button>
-                  <Button variant="outlined" startIcon={<VisibilityOffIcon />}>Dark</Button>
-                  <Button variant="outlined" startIcon={<PaletteIcon />}>System</Button>
+                  <Button
+                    variant={mode === 'light' ? 'contained' : 'outlined'}
+                    startIcon={<VisibilityIcon />}
+                    onClick={() => setMode('light')}
+                  >
+                    Light
+                  </Button>
+                  <Button
+                    variant={mode === 'dark' ? 'contained' : 'outlined'}
+                    startIcon={<VisibilityOffIcon />}
+                    onClick={() => setMode('dark')}
+                  >
+                    Dark
+                  </Button>
+                  <Button
+                    variant={mode === 'system' ? 'contained' : 'outlined'}
+                    startIcon={<PaletteIcon />}
+                    onClick={() => setMode('system')}
+                  >
+                    System
+                  </Button>
                 </Box>
                 <FormControlLabel
-                  control={<Switch defaultChecked={true} onChange={() => {}} />}
+                  control={
+                    <Switch
+                      checked={mode === 'system'}
+                      onChange={(e) => setMode(e.target.checked ? 'system' : 'light')}
+                    />
+                  }
                   label="Auto-detect system theme"
                 />
               </CardContent>

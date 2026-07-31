@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Box,
   Drawer,
@@ -17,7 +18,7 @@ import {
   Menu,
   MenuItem,
   Badge,
-  useMediaQuery,
+  Chip,
   Tooltip,
 } from '@mui/material';
 import {
@@ -33,8 +34,13 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   Notifications as NotificationsIcon,
+  Brightness4 as DarkModeIcon,
+  Brightness7 as LightModeIcon,
+  Insights as InsightsIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../hooks/useAuthStore';
+import { useResolvedMode, useThemeStore } from '../../hooks/useThemeMode';
+import { ticketApi } from '../../services/api';
 
 const drawerWidth = 260;
 const collapsedDrawerWidth = 72;
@@ -49,11 +55,30 @@ const menuItems = [
 ];
 
 export default function Layout() {
-  const isMobile = useMediaQuery('(max-width: 900px)');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const [notifAnchor, setNotifAnchor] = useState<HTMLElement | null>(null);
   const { user, logout } = useAuthStore();
+  const resolvedMode = useResolvedMode();
+  const setThemeMode = useThemeStore((s) => s.setMode);
+
+  const { data: tickets } = useQuery({
+    queryKey: ['tickets'],
+    queryFn: () => ticketApi.getAll().then((r) => r.data),
+  });
+
+  const breachedTickets = (tickets ?? []).filter((t) => t.sla?.status === 'Breached');
+  const criticalOpenTickets = (tickets ?? []).filter(
+    (t) => t.priority === 'Critical' && !['Resolved', 'Closed'].includes(t.status) && t.sla?.status !== 'Breached'
+  );
+  const allNotifications = [
+    ...breachedTickets.map((t) => ({ ticket: t, reason: 'SLA Breached' as const })),
+    ...criticalOpenTickets.map((t) => ({ ticket: t, reason: 'Critical Priority' as const })),
+  ];
+  const notifications = allNotifications.slice(0, 8);
 
   const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
   const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => setAnchorEl(event.currentTarget);
@@ -61,29 +86,49 @@ export default function Layout() {
   const handleLogout = () => { logout(); handleProfileMenuClose(); };
 
   const drawer = (
-    <Box sx={{ textAlign: 'center', p: 2 }}>
-      {!collapsed && <Typography variant="h6" sx={{ fontWeight: 700, color: 'primary.main' }}>Jira Executive</Typography>}
-      <Typography variant="caption" sx={{ display: collapsed ? 'none' : 'block', opacity: 0.7 }}>Reporting Platform</Typography>
+    <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, justifyContent: collapsed ? 'center' : 'flex-start', px: collapsed ? 0 : 1, mb: 1 }}>
+        <Box
+          sx={{
+            width: 36, height: 36, borderRadius: 2, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: (theme) => `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+            color: 'primary.contrastText',
+          }}
+        >
+          <InsightsIcon fontSize="small" />
+        </Box>
+        {!collapsed && (
+          <Box sx={{ overflow: 'hidden' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.2 }} noWrap>Jira Executive</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>Reporting Platform</Typography>
+          </Box>
+        )}
+      </Box>
       <Divider sx={{ my: 2 }} />
-      <List component="nav">
-        {menuItems.map((item) => (
-          <ListItem key={item.text} disablePadding sx={{ px: 1 }}>
-            <ListItemButton
-              component={NavLink}
-              to={item.path}
-              sx={({ isActive }) => ({
-                borderRadius: 2, mx: 1, my: 0.5,
-                color: isActive ? 'primary.main' : 'text.secondary',
-                backgroundColor: isActive ? 'primary.light' : 'transparent',
-                '& .MuiListItemIcon-root': { minWidth: 40, justifyContent: 'center', color: isActive ? 'primary.main' : 'text.secondary' },
-                '&:hover': { backgroundColor: isActive ? 'primary.light' : 'action.hover' },
-              })}
-            >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              {!collapsed && <ListItemText primary={item.text} />}
-            </ListItemButton>
-          </ListItem>
-        ))}
+      <List component="nav" sx={{ flexGrow: 1 }}>
+        {menuItems.map((item) => {
+          const isActive = location.pathname.startsWith(item.path);
+          return (
+            <ListItem key={item.text} disablePadding sx={{ px: 1 }}>
+              <ListItemButton
+                component={NavLink}
+                to={item.path}
+                sx={{
+                  borderRadius: 2, mx: 1, my: 0.5, pl: 1.75,
+                  borderLeft: 3, borderColor: isActive ? 'primary.main' : 'transparent',
+                  color: isActive ? 'primary.main' : 'text.secondary',
+                  backgroundColor: isActive ? 'action.selected' : 'transparent',
+                  '& .MuiListItemIcon-root': { minWidth: 40, justifyContent: 'center', color: isActive ? 'primary.main' : 'text.secondary' },
+                  '& .MuiListItemText-primary': { fontWeight: isActive ? 600 : 500 },
+                  '&:hover': { backgroundColor: isActive ? 'action.selected' : 'action.hover' },
+                }}
+              >
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                {!collapsed && <ListItemText primary={item.text} />}
+              </ListItemButton>
+            </ListItem>
+          );
+        })}
       </List>
       <Divider />
       <Box sx={{ px: 2, py: 1 }}>
@@ -110,7 +155,18 @@ export default function Layout() {
             <Typography variant="h6" sx={{ fontWeight: 600 }}>Jira Executive Reporting</Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Tooltip title="Notifications"><IconButton><Badge badgeContent={3} color="error"><NotificationsIcon /></Badge></IconButton></Tooltip>
+            <Tooltip title={resolvedMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+              <IconButton onClick={() => setThemeMode(resolvedMode === 'dark' ? 'light' : 'dark')}>
+                {resolvedMode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Notifications">
+              <IconButton onClick={(e) => setNotifAnchor(e.currentTarget)}>
+                <Badge badgeContent={allNotifications.length} color="error">
+                  <NotificationsIcon />
+                </Badge>
+              </IconButton>
+            </Tooltip>
             <IconButton onClick={handleProfileMenuOpen}>
               <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>{user?.name?.charAt(0) || 'U'}</Avatar>
             </IconButton>
@@ -144,6 +200,48 @@ export default function Layout() {
         <Divider />
         <MenuItem onClick={handleProfileMenuClose}><ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>Profile</MenuItem>
         <MenuItem onClick={handleLogout}><ListItemIcon><LogoutIcon fontSize="small" color="error" /></ListItemIcon><Typography color="error">Logout</Typography></MenuItem>
+      </Menu>
+
+      <Menu
+        anchorEl={notifAnchor}
+        open={Boolean(notifAnchor)}
+        onClose={() => setNotifAnchor(null)}
+        PaperProps={{ sx: { width: 360, maxHeight: 440 } }}
+      >
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Typography variant="subtitle1" fontWeight={600}>Notifications</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {allNotifications.length} ticket{allNotifications.length === 1 ? '' : 's'} need attention
+          </Typography>
+        </Box>
+        <Divider />
+        {notifications.length === 0 ? (
+          <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">No new notifications</Typography>
+          </Box>
+        ) : (
+          notifications.map(({ ticket, reason }) => (
+            <MenuItem
+              key={ticket.id}
+              onClick={() => { setNotifAnchor(null); navigate(`/tickets/${ticket.id}`); }}
+              sx={{ whiteSpace: 'normal', py: 1.5 }}
+            >
+              <Box sx={{ width: '100%' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, gap: 1 }}>
+                  <Typography variant="body2" fontWeight={600}>{ticket.key}</Typography>
+                  <Chip label={reason} size="small" color={reason === 'SLA Breached' ? 'error' : 'warning'} />
+                </Box>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                >
+                  {ticket.summary}
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))
+        )}
       </Menu>
     </Box>
   );

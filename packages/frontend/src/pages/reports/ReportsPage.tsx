@@ -1,5 +1,7 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import {
   Box,
   Grid,
@@ -7,14 +9,6 @@ import {
   CardContent,
   Typography,
   Chip,
-  Avatar,
-  TableContainer,
-  Table,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
-  Paper,
   Divider,
   Skeleton,
   Button,
@@ -29,33 +23,20 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemIcon,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  ExpandMoreIcon,
 } from '@mui/material';
 import {
   Description as DescriptionIcon,
-  TrendingUp as TrendingUpIcon,
-  Assessment as AssessmentIcon,
-  Download as DownloadIcon,
   Visibility as VisibilityIcon,
   Refresh as RefreshIcon,
-  Print as PrintIcon,
   PictureAsPdf as PictureAsPdfIcon,
   TableChart as TableChartIcon,
-  Article as ArticleIcon,
   Add as AddIcon,
-  CalendarToday as CalendarIcon,
-  Person as PersonIcon,
 } from '@mui/icons-material';
-import api from '../../services/api';
-import { MonthlyReport } from '../../services/api';
+import { reportApi, MonthlyReport } from '../../services/api';
+import { useAuthStore } from '../../hooks/useAuthStore';
 import { format } from 'date-fns';
+import { safeParseJSON } from '../../utils/chipColors';
+import PageHeader from '../../components/common/PageHeader';
 
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success'> = {
   draft: 'default',
@@ -65,22 +46,77 @@ const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error'
   archived: 'secondary',
 };
 
+type PeriodOption = 'last-month' | 'this-month' | 'last-quarter';
+
+function getPeriodRange(period: PeriodOption): { start: Date; end: Date } {
+  const now = new Date();
+  switch (period) {
+    case 'this-month':
+      return { start: startOfMonth(now), end: endOfMonth(now) };
+    case 'last-quarter':
+      return { start: startOfMonth(subMonths(now, 3)), end: endOfMonth(subMonths(now, 1)) };
+    case 'last-month':
+    default:
+      return { start: startOfMonth(subMonths(now, 1)), end: endOfMonth(subMonths(now, 1)) };
+  }
+}
+
+interface Kpi {
+  name: string;
+  value: string | number;
+  target?: string | number;
+}
+
 export default function ReportsPage() {
-  const { data: reports, isLoading } = useQuery({
+  const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+
+  const { data: reports, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['monthly-reports'],
-    queryFn: () => api.reportApi.getMonthlyReports(),
+    queryFn: () => reportApi.getMonthlyReports().then((r) => r.data),
   });
 
   const [selectedReport, setSelectedReport] = React.useState<MonthlyReport | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [newReportTitle, setNewReportTitle] = React.useState('');
+  const [period, setPeriod] = React.useState<PeriodOption>('last-month');
+  const [template, setTemplate] = React.useState('standard');
+
+  const generateMutation = useMutation({
+    mutationFn: () => {
+      const { start, end } = getPeriodRange(period);
+      return reportApi.generate({
+        name: newReportTitle.trim() || `Executive Report - ${format(start, 'MMMM yyyy')}`,
+        periodStart: start.toISOString(),
+        periodEnd: end.toISOString(),
+        generatedBy: user?.name,
+      }).then((r) => r.data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['monthly-reports'] });
+      toast.success('Report generated');
+      setDialogOpen(false);
+      setNewReportTitle('');
+    },
+    onError: () => {
+      toast.error('Failed to generate report');
+    },
+  });
+
+  const openGenerateDialog = () => {
+    setSelectedReport(null);
+    setNewReportTitle('');
+    setPeriod('last-month');
+    setTemplate('standard');
+    setDialogOpen(true);
+  };
 
   if (isLoading) {
     return (
-      <Grid container spacing={3} sx={{ p: 3 }}>
+      <Grid container spacing={3}>
         {[...Array(4)].map((_, i) => (
           <Grid item xs={12} sm={6} md={3} key={i}>
-            <Skeleton variant="rectangular" height={180} />
+            <Skeleton variant="rectangular" height={180} sx={{ borderRadius: 2 }} />
           </Grid>
         ))}
       </Grid>
@@ -88,28 +124,27 @@ export default function ReportsPage() {
   }
 
   return (
-    <Box sx={{ flexGrow: 1, p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <DescriptionIcon color="primary" /> Executive Reports
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Monthly operational intelligence reports with KPIs, trends, and AI narratives
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => {}}>Refresh</Button>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setDialogOpen(true); setNewReportTitle(''); }}>
-            Generate Report
-          </Button>
-        </Box>
-      </Box>
+    <Box sx={{ flexGrow: 1 }}>
+      <PageHeader
+        icon={DescriptionIcon}
+        title="Executive Reports"
+        subtitle="Monthly operational intelligence reports with KPIs, trends, and AI narratives"
+        actions={
+          <>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => refetch()} disabled={isRefetching}>
+              Refresh
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openGenerateDialog}>
+              Generate Report
+            </Button>
+          </>
+        }
+      />
 
       <Grid container spacing={3}>
         {reports?.map((report) => (
           <Grid item xs={12} sm={6} lg={4} xl={3} key={report.id}>
-            <Card sx={{ height: '100%' }}>
+            <Card sx={{ height: '100%', '&:hover': { boxShadow: 4, borderColor: 'primary.main' } }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box>
@@ -156,7 +191,7 @@ export default function ReportsPage() {
                 <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
                   Generate your first executive report to see operational insights.
                 </Typography>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={openGenerateDialog}>
                   Generate Report
                 </Button>
               </CardContent>
@@ -165,7 +200,7 @@ export default function ReportsPage() {
         )}
       </Grid>
 
-      {/* Report Detail Dialog */}
+      {/* Report Detail / Generate Dialog */}
       <Dialog open={dialogOpen} onClose={() => { setDialogOpen(false); setSelectedReport(null); }} maxWidth="lg" fullWidth>
         <DialogTitle>{selectedReport ? 'Report Details' : 'Generate New Report'}</DialogTitle>
         <DialogContent dividers>
@@ -181,13 +216,15 @@ export default function ReportsPage() {
               <Divider sx={{ mb: 2 }} />
               <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>Key Metrics</Typography>
               <Grid container spacing={2}>
-                {selectedReport.kpis?.map((kpi: any, i: number) => (
+                {safeParseJSON<Kpi[]>(selectedReport.kpis as unknown as string, []).map((kpi, i) => (
                   <Grid item xs={6} sm={3} key={i}>
                     <Card variant="outlined">
                       <CardContent>
                         <Typography variant="caption" color="text.secondary">{kpi.name}</Typography>
                         <Typography variant="h6" sx={{ fontWeight: 700 }}>{kpi.value}</Typography>
-                        <Typography variant="caption" color="text.secondary">Target: {kpi.target}</Typography>
+                        {kpi.target !== undefined && (
+                          <Typography variant="caption" color="text.secondary">Target: {kpi.target}</Typography>
+                        )}
                       </CardContent>
                     </Card>
                   </Grid>
@@ -206,7 +243,7 @@ export default function ReportsPage() {
               />
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Period</InputLabel>
-                <Select label="Period" defaultValue="last-month">
+                <Select label="Period" value={period} onChange={(e) => setPeriod(e.target.value as PeriodOption)}>
                   <MenuItem value="last-month">Last Month</MenuItem>
                   <MenuItem value="this-month">This Month</MenuItem>
                   <MenuItem value="last-quarter">Last Quarter</MenuItem>
@@ -214,14 +251,14 @@ export default function ReportsPage() {
               </FormControl>
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Template</InputLabel>
-                <Select label="Template" defaultValue="standard">
+                <Select label="Template" value={template} onChange={(e) => setTemplate(e.target.value)}>
                   <MenuItem value="standard">Standard Executive Report</MenuItem>
                   <MenuItem value="detailed">Detailed Operational Report</MenuItem>
                   <MenuItem value="executive-summary">Executive Summary Only</MenuItem>
                 </Select>
               </FormControl>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-                The report will include KPIs, charts, operational risks, recurring issues, engineer highlights, application health, recommendations, and action items.
+                The report will be generated from tickets created during the selected period, with KPIs and an executive summary computed from live data.
               </Typography>
             </Box>
           )}
@@ -230,12 +267,17 @@ export default function ReportsPage() {
           <Button onClick={() => { setDialogOpen(false); setSelectedReport(null); }}>Cancel</Button>
           {selectedReport ? (
             <>
-              <Button variant="outlined" startIcon={<PictureAsPdfIcon />} onClick={() => {}}>Export PDF</Button>
-              <Button variant="outlined" startIcon={<TableChartIcon />} onClick={() => {}}>Export Excel</Button>
+              <Button variant="outlined" startIcon={<PictureAsPdfIcon />} onClick={() => toast('PDF export not implemented yet')}>Export PDF</Button>
+              <Button variant="outlined" startIcon={<TableChartIcon />} onClick={() => toast('Excel export not implemented yet')}>Export Excel</Button>
             </>
           ) : (
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setDialogOpen(false); }}>
-              Generate Report
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+            >
+              {generateMutation.isPending ? 'Generating…' : 'Generate Report'}
             </Button>
           )}
         </DialogActions>

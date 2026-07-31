@@ -357,6 +357,9 @@ export const ticketApi = {
   
   export: (filters?: any, format?: 'csv' | 'xlsx' | 'json') =>
     api.get('/tickets/export', { params: { ...filters, format }, responseType: 'blob' }),
+
+  addComment: (ticketId: string, data: { content: string; authorId: string; isInternal?: boolean }) =>
+    api.post<TicketComment>(`/tickets/${ticketId}/comments`, data),
 };
 
 export const applicationApi = {
@@ -407,14 +410,30 @@ export const dashboardApi = {
 export const reportApi = {
   getMonthlyReports: () =>
     api.get<MonthlyReport[]>('/reports/monthly'),
-  
+
   getById: (id: string) =>
     api.get<MonthlyReport>(`/reports/monthly/${id}`),
+
+  generate: (data: { name: string; periodStart: string; periodEnd: string; generatedBy?: string }) =>
+    api.post<MonthlyReport>('/reports/monthly', data),
 };
 
 export const healthApi = {
   getApplicationHealth: (applicationId: string) =>
     api.get(`/health/application/${applicationId}`),
+};
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  avatar?: string;
+}
+
+export const userApi = {
+  getAll: () =>
+    api.get<User[]>('/users'),
 };
 
 export default api;

@@ -43,7 +43,7 @@ app.get('/api/tickets/:id', async (req, res) => {
     const ticket = await prisma.ticket.findUnique({
       where: { id: req.params.id },
       include: {
-        comments: true,
+        comments: { orderBy: { createdAt: 'asc' } },
         sla: true,
         reopenHistory: true,
         remediationNotes: true,
@@ -60,6 +60,60 @@ app.get('/api/tickets/:id', async (req, res) => {
   } catch (error) {
     console.error('Error fetching ticket:', error);
     res.status(500).json({ error: 'Failed to fetch ticket' });
+  }
+});
+
+app.post('/api/tickets/:id/comments', async (req, res) => {
+  try {
+    const { content, authorId, isInternal } = req.body;
+    if (!content || typeof content !== 'string' || !content.trim()) {
+      return res.status(400).json({ error: 'content is required' });
+    }
+    if (!authorId) {
+      return res.status(400).json({ error: 'authorId is required' });
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id } });
+    if (!ticket) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    const author = await prisma.user.findUnique({ where: { id: authorId } });
+    if (!author) {
+      return res.status(400).json({ error: 'Invalid authorId' });
+    }
+
+    const comment = await prisma.ticketComment.create({
+      data: {
+        ticketId: ticket.id,
+        authorId: author.id,
+        authorName: author.name,
+        authorRole: author.role,
+        content: content.trim(),
+        isInternal: Boolean(isInternal),
+      },
+    });
+
+    await prisma.ticket.update({ where: { id: ticket.id }, data: { updatedAt: new Date() } });
+
+    res.status(201).json(comment);
+  } catch (error) {
+    console.error('Error creating comment:', error);
+    res.status(500).json({ error: 'Failed to create comment' });
+  }
+});
+
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, email: true, name: true, role: true, avatar: true },
+    });
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
@@ -211,6 +265,68 @@ app.get('/api/reports/monthly', async (req, res) => {
   } catch (error) {
     console.error('Error fetching reports:', error);
     res.status(500).json({ error: 'Failed to fetch reports' });
+  }
+});
+
+app.post('/api/reports/monthly', async (req, res) => {
+  try {
+    const { name, periodStart, periodEnd, generatedBy } = req.body;
+    if (!name || !periodStart || !periodEnd) {
+      return res.status(400).json({ error: 'name, periodStart, and periodEnd are required' });
+    }
+
+    const start = new Date(periodStart);
+    const end = new Date(periodEnd);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({ error: 'periodStart and periodEnd must be valid dates' });
+    }
+
+    const periodTickets = await prisma.ticket.findMany({
+      where: { createdAt: { gte: start, lte: end } },
+      include: { sla: true },
+    });
+
+    const totalTickets = periodTickets.length;
+    const resolvedTickets = periodTickets.filter(t => ['Resolved', 'Closed'].includes(t.status)).length;
+    const criticalTickets = periodTickets.filter(t => t.priority === 'Critical').length;
+    const slaMet = periodTickets.filter(t => t.sla?.status === 'Met').length;
+    const slaBreached = periodTickets.filter(t => t.sla?.status === 'Breached').length;
+    const slaCompliance = totalTickets > 0 ? Math.round((slaMet / totalTickets) * 100) : 100;
+
+    const resolvedWithTime = periodTickets.filter(t => t.timeToResolution);
+    const avgResolutionHours = resolvedWithTime.length > 0
+      ? Math.round(resolvedWithTime.reduce((sum, t) => sum + (t.timeToResolution || 0), 0) / resolvedWithTime.length / 60)
+      : 0;
+
+    const kpis = [
+      { name: 'Total Tickets', value: totalTickets },
+      { name: 'Resolved', value: resolvedTickets },
+      { name: 'SLA Compliance', value: `${slaCompliance}%`, target: '95%' },
+      { name: 'Critical Tickets', value: criticalTickets },
+      { name: 'SLA Breaches', value: slaBreached, target: 0 },
+      { name: 'Avg Resolution Time', value: `${avgResolutionHours}h` },
+    ];
+
+    const executiveSummary = totalTickets === 0
+      ? `No tickets were reported between ${start.toDateString()} and ${end.toDateString()}.`
+      : `During this period, ${totalTickets} ticket${totalTickets === 1 ? ' was' : 's were'} logged across supported applications, with ${resolvedTickets} resolved (${slaCompliance}% SLA compliance). ${criticalTickets} critical-priority ticket${criticalTickets === 1 ? '' : 's'} ${criticalTickets === 1 ? 'was' : 'were'} reported${slaBreached > 0 ? `, and ${slaBreached} ticket${slaBreached === 1 ? '' : 's'} breached SLA targets` : ' with no SLA breaches'}. Average resolution time was ${avgResolutionHours} hours.`;
+
+    const report = await prisma.monthlyReport.create({
+      data: {
+        name,
+        periodStart: start,
+        periodEnd: end,
+        status: 'draft',
+        generatedBy: generatedBy || 'system',
+        executiveSummary,
+        kpis: JSON.stringify(kpis),
+      },
+    });
+
+    res.status(201).json(report);
+  } catch (error) {
+    console.error('Error generating report:', error);
+    res.status(500).json({ error: 'Failed to generate report' });
   }
 });
 
