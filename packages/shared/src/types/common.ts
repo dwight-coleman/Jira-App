@@ -1,3 +1,5 @@
+import type { ReportSchedule } from './provider';
+
 export interface PaginationParams {
   page: number;
   pageSize: number;

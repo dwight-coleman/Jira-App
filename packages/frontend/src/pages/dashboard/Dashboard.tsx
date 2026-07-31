@@ -9,11 +9,16 @@ import {
   Apps as AppsIcon,
   PriorityHigh as PriorityIcon,
   Timeline as TimelineIcon,
+  Inbox as InboxIcon,
+  HourglassBottom as HourglassIcon,
+  ShowChart as ShowChartIcon,
+  TrackChanges as TargetIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import {
-  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid,
-  Tooltip as ChartTooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip as ChartTooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { dashboardApi } from '../../services/api';
 import PageHeader from '../../components/common/PageHeader';
@@ -76,10 +81,23 @@ export default function Dashboard() {
     itemStyle: { color: chrome.tooltipText },
   };
 
-  const { data: kpis, isLoading: kpisLoading } = useQuery({
+  const { data: kpis, isLoading: kpisLoading, dataUpdatedAt } = useQuery({
     queryKey: ['dashboard-kpis'],
     queryFn: () => dashboardApi.getKPIs().then((r) => r.data),
   });
+
+  const { data: monthlyTrend, isLoading: trendLoading } = useQuery({
+    queryKey: ['dashboard-monthly-trend'],
+    queryFn: () => dashboardApi.getMonthlyTrend().then((r) => r.data),
+  });
+
+  const { data: slaTrend, isLoading: slaTrendLoading } = useQuery({
+    queryKey: ['dashboard-sla-trend'],
+    queryFn: () => dashboardApi.getSLACompliance().then((r) => r.data),
+  });
+
+  const trendData = (monthlyTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
+  const slaData = (slaTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
 
   const { data: byApplication, isLoading: byAppLoading } = useQuery({
     queryKey: ['dashboard-tickets-by-application'],
@@ -98,32 +116,79 @@ export default function Dashboard() {
 
   return (
     <Box sx={{ flexGrow: 1 }}>
-      <PageHeader icon={DashboardIcon} title="Executive Dashboard" subtitle="Real-time operational overview across all applications" />
+      <PageHeader
+        icon={DashboardIcon}
+        title="Executive Dashboard"
+        subtitle={`Operational overview across all applications · Data as of ${dataUpdatedAt ? format(new Date(dataUpdatedAt), "MMM d, yyyy h:mm a") : '—'}`}
+      />
 
       <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={4} md={2}>
           {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
             <KpiCard icon={<TicketIcon />} label="Total Tickets" value={kpis?.totalTickets ?? 0} color="primary" />
           )}
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={4} md={2}>
+          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
+            <KpiCard icon={<InboxIcon />} label="Open" value={kpis?.openTickets ?? 0} color="warning" />
+          )}
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
           {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
             <KpiCard icon={<ResolvedIcon />} label="Resolved" value={kpis?.resolvedTickets ?? 0} color="success" />
           )}
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={4} md={2}>
           {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<CriticalIcon />} label="Critical Tickets" value={kpis?.criticalTickets ?? 0} color="error" />
+            <KpiCard icon={<CriticalIcon />} label="Critical" value={kpis?.criticalTickets ?? 0} color="error" />
           )}
         </Grid>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={6} sm={4} md={2}>
           {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
             <KpiCard icon={<SlaIcon />} label="SLA Compliance" value={`${kpis?.slaCompliance ?? 0}%`} color="info" />
+          )}
+        </Grid>
+        <Grid item xs={6} sm={4} md={2}>
+          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
+            <KpiCard icon={<HourglassIcon />} label="Avg Resolution" value={`${kpis?.avgResolutionTime ?? 0}h`} color="secondary" />
           )}
         </Grid>
       </Grid>
 
       <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <ChartCard icon={<ShowChartIcon fontSize="small" />} title="Monthly Ticket Volume">
+            {trendLoading ? <Skeleton variant="rectangular" height={240} sx={{ borderRadius: 1 }} /> : (
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chrome.grid} vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
+                  <ChartTooltip {...tooltipStyle} formatter={(value: number) => [value, 'Tickets']} />
+                  <Line type="monotone" dataKey="value" stroke={categorical[0]} strokeWidth={2} dot={{ r: 3, fill: categorical[0] }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <ChartCard icon={<TargetIcon fontSize="small" />} title="SLA Compliance Trend (target 95%)">
+            {slaTrendLoading ? <Skeleton variant="rectangular" height={240} sx={{ borderRadius: 1 }} /> : (
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={slaData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chrome.grid} vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
+                  <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
+                  <ChartTooltip {...tooltipStyle} formatter={(value: number) => [`${value}%`, 'SLA Compliance']} />
+                  <ReferenceLine y={95} stroke={theme.palette.text.secondary} strokeDasharray="6 4" />
+                  <Line type="monotone" dataKey="value" stroke={categorical[2]} strokeWidth={2} dot={{ r: 3, fill: categorical[2] }} activeDot={{ r: 5 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </Grid>
+
         <Grid item xs={12} md={7}>
           <ChartCard icon={<AppsIcon fontSize="small" />} title="Tickets by Application">
             {byAppLoading ? <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 1 }} /> : (

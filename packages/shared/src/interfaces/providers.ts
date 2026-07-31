@@ -3,7 +3,7 @@ import { Ticket, TicketFilters, PaginatedTickets, TicketStatistics } from '../ty
 import { AIAnalysisRequest, AIAnalysisResponse, AIBatchAnalysisRequest, AIBatchAnalysisResponse, AIProviderConfig, AIProviderHealth, AIModelConfig, AIPromptTemplate, AIInsightType } from '../types/ai';
 import { ProviderConfig, ProviderHealth, ExecutiveSummaryParams, OperationalReportParams, TrendReportParams, SLAReportParams, TeamPerformanceParams, ApplicationHealthParams, BaseReport, ExecutiveReport, OperationalReport, TrendReport, SLAReport, TeamPerformanceReport, ApplicationHealthReport, ReportSchedule, ScheduledReport } from '../types/provider';
 
-export { ITicketProvider, IAIProvider, IReportProvider };
+export type { ITicketProvider, IAIProvider, IReportProvider };
 export type { ProviderConfig, ProviderHealth };
 export type { Ticket, TicketFilters, PaginatedTickets, TicketStatistics };
 export type { AIAnalysisRequest, AIAnalysisResponse, AIBatchAnalysisRequest, AIBatchAnalysisResponse, AIProviderConfig, AIProviderHealth, AIModelConfig, AIPromptTemplate, AIInsightType };

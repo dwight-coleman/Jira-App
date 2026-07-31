@@ -1,3 +1,7 @@
+import type { AIInsightType } from './ticket';
+
+export type { AIInsightType };
+
 export interface AIProviderConfig {
   provider: 'mock' | 'openai' | 'anthropic' | 'custom';
   apiKey?: string;

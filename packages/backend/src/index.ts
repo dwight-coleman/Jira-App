@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 
@@ -12,11 +13,31 @@ const prisma = new PrismaClient();
 
 const PORT = process.env.PORT || 3001;
 
+// Comma-separated list of permitted origins. Defaults to the local dev server;
+// set CORS_ORIGINS explicitly when deploying.
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: (origin, callback) => {
+    // Same-origin/non-browser requests (curl, health probes) send no Origin.
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error('Not allowed by CORS'));
+  },
+}));
 app.use(compression());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(rateLimit({
+  windowMs: 60_000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again shortly.' },
+}));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -330,6 +351,43 @@ app.post('/api/reports/monthly', async (req, res) => {
   }
 });
 
+app.get('/api/settings', async (req, res) => {
+  try {
+    const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });
+    if (!settings) {
+      return res.json({});
+    }
+    const parse = (json: string) => {
+      try { return JSON.parse(json); } catch { return {}; }
+    };
+    // Never send stored secrets to the client. The UI shows whether a key is
+    // configured, not its value.
+    const redactCredentials = (section: Record<string, any>) => {
+      if (!section || typeof section !== 'object' || !section.credentials) return section;
+      const redacted: Record<string, boolean> = {};
+      for (const key of Object.keys(section.credentials)) {
+        redacted[key] = Boolean(section.credentials[key]);
+      }
+      return { ...section, credentials: undefined, credentialsConfigured: redacted };
+    };
+    res.json({
+      general: parse(settings.general),
+      dashboard: parse(settings.dashboard),
+      tickets: parse(settings.tickets),
+      ai: redactCredentials(parse(settings.ai)),
+      reports: parse(settings.reports),
+      security: parse(settings.security),
+      integrations: redactCredentials(parse(settings.integrations)),
+      notifications: parse(settings.notifications),
+      updatedAt: settings.updatedAt,
+      updatedBy: settings.updatedBy,
+    });
+  } catch (error) {
+    console.error('Error fetching settings:', error);
+    res.status(500).json({ error: 'Failed to fetch settings' });
+  }
+});
+
 app.get('/api/health/application/:id', async (req, res) => {
   try {
     const health = await prisma.applicationHealthScore.findMany({
@@ -342,6 +400,21 @@ app.get('/api/health/application/:id', async (req, res) => {
     console.error('Error fetching application health:', error);
     res.status(500).json({ error: 'Failed to fetch application health' });
   }
+});
+
+// Unknown API route
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Central error handler. Returns a generic message so internal details and
+// stack traces are never exposed to clients.
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  if (err?.message === 'Not allowed by CORS') {
+    return res.status(403).json({ error: 'Origin not permitted' });
+  }
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Start server

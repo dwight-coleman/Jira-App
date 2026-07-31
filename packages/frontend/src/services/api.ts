@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+// Relative by default so the app works on any host (localhost, a remote VM, or
+// behind a reverse proxy) with no rebuild: Vite proxies /api in dev, and in
+// production the API is served from the same origin. Override with VITE_API_URL
+// only when the backend genuinely lives elsewhere.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

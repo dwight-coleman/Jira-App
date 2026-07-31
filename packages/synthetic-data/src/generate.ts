@@ -174,6 +174,8 @@ async function main() {
     prisma.monthlyReport.deleteMany(),
     prisma.applicationHealthScore.deleteMany(),
     prisma.trendHistory.deleteMany(),
+    prisma.engineerPerformance.deleteMany(),
+    prisma.engineerWorkload.deleteMany(),
     prisma.ticket.deleteMany(),
     prisma.engineer.deleteMany(),
     prisma.user.deleteMany(),
@@ -636,6 +638,176 @@ async function main() {
   console.log(`✅ Created ${allTickets.length} tickets`);
   console.log(`✅ Created ${commentsCreated} comments`);
   console.log(`✅ Created ${analysesCreated} AI analyses`);
+
+  // Derived metrics — computed from the actual seeded tickets so every number
+  // on the dashboard, engineer cards, and app health rings is internally consistent.
+  const severityNum = (s: string) => ({ 'Severity 1': 4, 'Severity 2': 3, 'Severity 3': 2, 'Severity 4': 1 }[s] ?? 2);
+  const priorityNum = (p: string) => ({ Critical: 4, High: 3, Medium: 2, Low: 1 }[p] ?? 2);
+  const median = (nums: number[]) => {
+    if (!nums.length) return 0;
+    const s = [...nums].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+
+  console.log('👷 Seeding engineer workload & performance...');
+  for (const eng of engineers) {
+    const engTickets = allTickets.filter(t => t.assigneeEmail === eng.email);
+    const open = engTickets.filter(t => t.status === 'Open').length;
+    const inProgress = engTickets.filter(t => t.status === 'In Progress').length;
+    const waiting = engTickets.filter(t => t.status.startsWith('Waiting')).length;
+    const currentTickets = open + inProgress + waiting;
+    const now = new Date();
+    const overdue = engTickets.filter(t => !['Resolved', 'Closed'].includes(t.status) && t.dueDate && t.dueDate < now).length;
+    const resolvedWithTime = engTickets.filter(t => t.timeToResolution);
+    const avgRes = resolvedWithTime.length
+      ? resolvedWithTime.reduce((s, t) => s + (t.timeToResolution || 0), 0) / resolvedWithTime.length
+      : 0;
+    const capacity = Math.min(1.2, currentTickets / 5);
+
+    await prisma.engineerWorkload.create({
+      data: {
+        engineerId: eng.id,
+        engineerName: eng.name,
+        team: eng.team,
+        currentTickets,
+        openTickets: open,
+        inProgressTickets: inProgress,
+        overdueTickets: overdue,
+        dueTodayTickets: 0,
+        avgResolutionTime: Math.round(avgRes),
+        capacity: Math.round(capacity * 100) / 100,
+        recommendedAction: capacity > 0.9 ? 'Approaching capacity — consider redistributing incoming tickets' : null,
+      },
+    });
+
+    const assigned = engTickets.length;
+    const resolvedCount = engTickets.filter(t => ['Resolved', 'Closed'].includes(t.status)).length;
+    const slaMet = engTickets.filter(t => t.sla?.status === 'Met').length;
+    const slaBreached = engTickets.filter(t => t.sla?.status === 'Breached').length;
+    const slaAtRisk = engTickets.filter(t => t.sla?.status === 'At Risk').length;
+    const slaRate = assigned ? Math.round((slaMet / assigned) * 1000) / 10 : 100;
+    const csatTickets = engTickets.filter(t => t.customerSatisfaction);
+    const csat = csatTickets.length
+      ? Math.round((csatTickets.reduce((s, t) => s + (t.customerSatisfaction || 0), 0) / csatTickets.length) * 10) / 10
+      : 0;
+    const avgPriority = assigned
+      ? Math.round((engTickets.reduce((s, t) => s + priorityNum(t.priority), 0) / assigned) * 10) / 10
+      : 0;
+
+    await prisma.engineerPerformance.create({
+      data: {
+        engineerId: eng.id,
+        engineerName: eng.name,
+        team: eng.team,
+        periodStart: monthStart,
+        periodEnd: monthEnd,
+        ticketsAssigned: assigned,
+        ticketsResolved: resolvedCount,
+        ticketsReopened: 0,
+        avgResolutionTime: Math.round(avgRes),
+        medianResolutionTime: Math.round(median(resolvedWithTime.map(t => t.timeToResolution || 0))),
+        slaComplianceRate: slaRate,
+        slaMet,
+        slaBreached,
+        slaAtRisk,
+        avgPriority,
+        applicationsSupported: eng.applications,
+        customerSatisfaction: csat,
+        qualityScore: Math.round(Math.min(100, slaRate * 0.6 + csat * 8) * 10) / 10,
+        utilizationRate: Math.round(capacity * 1000) / 10,
+        workloadTrend: capacity > 0.8 ? 'increasing' : 'stable',
+        aiSummary: `${eng.name} handled ${assigned} ticket${assigned === 1 ? '' : 's'} this period, resolving ${resolvedCount} with ${slaRate.toFixed(0)}% SLA compliance${slaBreached > 0 ? ` (${slaBreached} breach${slaBreached === 1 ? '' : 'es'})` : ''}. Average resolution time was ${Math.round(avgRes / 60)} hours.`,
+      },
+    });
+  }
+  console.log(`✅ Seeded workload & performance for ${engineers.length} engineers`);
+
+  console.log('💚 Seeding application health scores...');
+  for (const app of applications) {
+    const appTickets = allTickets.filter(t => t.application === app.name);
+    const volume = appTickets.length;
+    const avgSeverity = volume
+      ? Math.round((appTickets.reduce((s, t) => s + severityNum(t.severity), 0) / volume) * 10) / 10
+      : 0;
+    const slaViolations = appTickets.filter(t => t.sla?.status === 'Breached').length;
+    const resolvedWithTime = appTickets.filter(t => t.timeToResolution);
+    const resolutionTime = resolvedWithTime.length
+      ? Math.round((resolvedWithTime.reduce((s, t) => s + (t.timeToResolution || 0), 0) / resolvedWithTime.length / 60) * 10) / 10
+      : 0;
+    const criticalIncidents = appTickets.filter(t => t.priority === 'Critical').length;
+
+    const rawScore = 100 - volume * 3 - slaViolations * 9 - criticalIncidents * 7 - Math.max(0, avgSeverity - 2) * 8;
+    const healthScore = Math.max(25, Math.min(98, Math.round(rawScore)));
+    const riskLevel = healthScore >= 80 ? 'Low' : healthScore >= 60 ? 'Medium' : healthScore >= 40 ? 'High' : 'Critical';
+
+    await prisma.applicationHealthScore.create({
+      data: {
+        applicationId: app.id,
+        applicationName: app.name,
+        date: monthEnd,
+        healthScore,
+        ticketVolume: volume,
+        avgSeverity,
+        slaViolations,
+        resolutionTime,
+        repeatIncidents: 0,
+        reopenedTickets: 0,
+        criticalIncidents,
+        riskLevel,
+        trend: slaViolations > 1 ? 'declining' : 'stable',
+        recommendedActions: slaViolations > 0
+          ? `Review the ${slaViolations} SLA breach${slaViolations === 1 ? '' : 'es'} for ${app.displayName} and address the underlying causes.`
+          : '',
+      },
+    });
+  }
+  console.log(`✅ Seeded health scores for ${applications.length} applications`);
+
+  console.log('📈 Seeding 6-month trend history...');
+  const realVolume = allTickets.length;
+  const realSla = realVolume
+    ? Math.round((allTickets.filter(t => t.sla?.status === 'Met').length / realVolume) * 1000) / 10
+    : 100;
+  let prevVolume: number | null = null;
+  let prevSla: number | null = null;
+  for (let m = 6; m >= 1; m--) {
+    const pStart = startOfMonth(subMonths(new Date(), m));
+    const pEnd = endOfMonth(subMonths(new Date(), m));
+    const isCurrent = m === 1;
+    const volume = isCurrent ? realVolume : Math.max(8, Math.round(realVolume * (0.7 + Math.random() * 0.6)));
+    const sla = isCurrent ? realSla : Math.round((55 + Math.random() * 35) * 10) / 10;
+
+    await prisma.trendHistory.create({
+      data: {
+        metric: 'ticket_volume',
+        dimension: 'global',
+        dimensionValue: 'all',
+        periodStart: pStart,
+        periodEnd: pEnd,
+        value: volume,
+        previousValue: prevVolume,
+        changePercent: prevVolume ? Math.round(((volume - prevVolume) / prevVolume) * 1000) / 10 : null,
+        trend: prevVolume === null ? 'stable' : volume > prevVolume ? 'up' : volume < prevVolume ? 'down' : 'stable',
+      },
+    });
+    await prisma.trendHistory.create({
+      data: {
+        metric: 'sla_compliance',
+        dimension: 'global',
+        dimensionValue: 'all',
+        periodStart: pStart,
+        periodEnd: pEnd,
+        value: sla,
+        previousValue: prevSla,
+        changePercent: prevSla ? Math.round(((sla - prevSla) / prevSla) * 1000) / 10 : null,
+        trend: prevSla === null ? 'stable' : sla > prevSla ? 'up' : sla < prevSla ? 'down' : 'stable',
+      },
+    });
+    prevVolume = volume;
+    prevSla = sla;
+  }
+  console.log('✅ Seeded trend history (ticket_volume + sla_compliance, 6 months)');
 
   // Create default provider configs
   console.log('⚙️ Creating provider configurations...');

@@ -205,7 +205,8 @@ export default function SettingsPage() {
                       fullWidth
                       label="OpenAI API Key"
                       type={showPassword ? 'text' : 'password'}
-                      defaultValue={s.ai?.credentials?.openaiApiKey || ''}
+                      placeholder={s.ai?.credentialsConfigured?.openaiApiKey ? 'Configured — enter a new key to replace' : 'Not configured'}
+                      helperText="Stored keys are never sent to the browser"
                       InputProps={{
                         endAdornment: (
                           <IconButton onClick={() => setShowPassword(!showPassword)}>
@@ -220,7 +221,8 @@ export default function SettingsPage() {
                       fullWidth
                       label="Anthropic API Key"
                       type={showPassword ? 'text' : 'password'}
-                      defaultValue={s.ai?.credentials?.anthropicApiKey || ''}
+                      placeholder={s.ai?.credentialsConfigured?.anthropicApiKey ? 'Configured — enter a new key to replace' : 'Not configured'}
+                      helperText="Stored keys are never sent to the browser"
                       InputProps={{
                         endAdornment: (
                           <IconButton onClick={() => setShowPassword(!showPassword)}>
@@ -249,7 +251,7 @@ export default function SettingsPage() {
                   <Grid item xs={12} sm={6}>
                     <FormControlLabel
                       control={
-                        <Switch checked={s.ai?.autoAnalyzeNewTickets} onChange={() => {}} />
+                        <Switch checked={s.ai?.autoAnalyzeNewTickets ?? false} onChange={() => {}} />
                       }
                       label="Auto-analyze new tickets"
                     />
@@ -257,7 +259,7 @@ export default function SettingsPage() {
                   <Grid item xs={12} sm={6}>
                     <FormControlLabel
                       control={
-                        <Switch checked={s.ai?.enabled} onChange={() => {}} />
+                        <Switch checked={s.ai?.enabled ?? false} onChange={() => {}} />
                       }
                       label="Enable AI features"
                     />

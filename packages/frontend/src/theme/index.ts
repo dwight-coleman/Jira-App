@@ -50,7 +50,9 @@ export function buildTheme(mode: PaletteMode): Theme {
       divider: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
     },
     typography: {
-      fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+      // System font stack only — no web-font downloads, so the app renders
+      // identically on networks that block external CDNs.
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
       h1: { fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.2 },
       h2: { fontSize: '2rem', fontWeight: 600, lineHeight: 1.3 },
       h3: { fontSize: '1.75rem', fontWeight: 600, lineHeight: 1.3 },

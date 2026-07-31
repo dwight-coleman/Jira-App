@@ -1,5 +1,5 @@
 import { Ticket, TicketFilters, PaginatedTickets, TicketStatistics } from './ticket';
-import { AIAnalysisRequest, AIAnalysisResponse, AIBatchAnalysisRequest, AIBatchAnalysisResponse, AIProviderConfig, AIProviderHealth, AIInsightType } from './ai';
+import { AIAnalysisRequest, AIAnalysisResponse, AIBatchAnalysisRequest, AIBatchAnalysisResponse, AIProviderConfig, AIProviderHealth, AIInsightType, AIModelConfig, AIPromptTemplate } from './ai';
 
 export interface ITicketProvider {
   name: string;
