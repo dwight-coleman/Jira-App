@@ -13,6 +13,7 @@ import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import RisksPage from './pages/risks/RisksPage';
 import ActionItemsPage from './pages/actions/ActionItemsPage';
+import PresentationMode from './pages/present/PresentationMode';
 import CommandPalette from './components/common/CommandPalette';
 import { useAuthStore } from './hooks/useAuthStore';
 import { userApi } from './services/api';
@@ -53,6 +54,8 @@ function AppRoutes() {
     <>
       <CommandPalette />
       <Routes>
+        {/* Outside the Layout: briefing view replaces all app chrome. */}
+        <Route path="/present" element={<PresentationMode />} />
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/tickets" element={<TicketsPage />} />

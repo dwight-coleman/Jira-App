@@ -15,6 +15,7 @@ import {
   ShieldOutlined as RiskIcon,
   TaskAltOutlined as ActionIcon,
   TuneOutlined as SettingsIcon,
+  SlideshowOutlined as PresentIcon,
 } from '@mui/icons-material';
 import { ticketApi, applicationApi, engineerApi } from '../../services/api';
 import StatusPill from '../ui/StatusPill';
@@ -39,6 +40,7 @@ const NAV_COMMANDS: Command[] = [
   { id: 'nav-actions', label: 'Action Items', group: 'Navigate', icon: <ActionIcon />, path: '/action-items' },
   { id: 'nav-reports', label: 'Reports', group: 'Navigate', icon: <ReportIcon />, path: '/reports' },
   { id: 'nav-settings', label: 'Settings', group: 'Navigate', icon: <SettingsIcon />, path: '/settings' },
+  { id: 'nav-present', label: 'Briefing view', sublabel: 'Full-screen rotating summary', group: 'Navigate', icon: <PresentIcon />, path: '/present' },
 ];
 
 export default function CommandPalette() {

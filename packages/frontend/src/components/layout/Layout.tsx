@@ -25,6 +25,7 @@ import {
   ShieldOutlined as RiskIcon,
   TaskAltOutlined as ActionIcon,
   SearchOutlined as SearchIcon,
+  SlideshowOutlined as PresentIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useResolvedMode, useThemeStore } from '../../hooks/useThemeMode';
@@ -291,6 +292,12 @@ export default function Layout() {
                 ⌘K
               </Box>
             </Box>
+
+            <Tooltip title="Briefing view — full-screen rotating summary">
+              <IconButton size="small" onClick={() => navigate('/present')} aria-label="Open briefing view">
+                <PresentIcon sx={{ fontSize: 19 }} />
+              </IconButton>
+            </Tooltip>
 
             <Tooltip title={resolvedMode === 'dark' ? 'Light mode' : 'Dark mode'}>
               <IconButton size="small" onClick={() => setThemeMode(resolvedMode === 'dark' ? 'light' : 'dark')}>
