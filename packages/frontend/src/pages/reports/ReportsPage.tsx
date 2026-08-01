@@ -8,7 +8,6 @@ import {
   Card,
   CardContent,
   Typography,
-  Chip,
   Divider,
   Skeleton,
   Button,
@@ -37,6 +36,8 @@ import { useAuthStore } from '../../hooks/useAuthStore';
 import { format } from 'date-fns';
 import { safeParseJSON } from '../../utils/chipColors';
 import PageHeader from '../../components/common/PageHeader';
+import StatusPill from '../../components/ui/StatusPill';
+import EmptyState from '../../components/ui/EmptyState';
 
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'warning' | 'info' | 'success'> = {
   draft: 'default',
@@ -212,79 +213,98 @@ export default function ReportsPage() {
   return (
     <Box sx={{ flexGrow: 1 }}>
       <PageHeader
-        icon={DescriptionIcon}
+        eyebrow="Briefing"
         title="Executive Reports"
-        subtitle="Monthly operational intelligence reports with KPIs, trends, and AI narratives"
+        subtitle="Period reports generated from live ticket data, ready to print or distribute"
         actions={
           <>
-            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => refetch()} disabled={isRefetching}>
+            <Button variant="outlined" size="small" startIcon={<RefreshIcon sx={{ fontSize: 16 }} />} onClick={() => refetch()} disabled={isRefetching}>
               Refresh
             </Button>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openGenerateDialog}>
-              Generate Report
+            <Button variant="contained" size="small" startIcon={<AddIcon sx={{ fontSize: 16 }} />} onClick={openGenerateDialog}>
+              Generate report
             </Button>
           </>
         }
       />
 
-      <Grid container spacing={3}>
-        {reports?.map((report) => (
-          <Grid item xs={12} sm={6} lg={4} xl={3} key={report.id}>
-            <Card sx={{ height: '100%', '&:hover': { boxShadow: 4, borderColor: 'primary.main' } }}>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>{report.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">
+      <Grid container spacing={2}>
+        {reports?.map((report) => {
+          const kpis = reportKpis(report);
+          return (
+            <Grid item xs={12} md={6} xl={4} key={report.id}>
+              <Card
+                sx={{
+                  height: '100%', display: 'flex', flexDirection: 'column',
+                  '&:hover': { borderColor: 'surface.borderStrong', boxShadow: 1 },
+                }}
+              >
+                <Box sx={{ p: 2.25, pb: 1.75, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1.5 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="h6" sx={{ mb: 0.375 }}>{report.name}</Typography>
+                    <Typography variant="caption" color="text.secondary" className="tabular-nums">
                       {format(new Date(report.periodStart), 'MMM d')} – {format(new Date(report.periodEnd), 'MMM d, yyyy')}
                     </Typography>
                   </Box>
-                  <Chip
-                    label={report.status}
+                  <StatusPill
+                    label={report.status.replace('_', ' ')}
                     color={statusColors[report.status] || 'default'}
-                    size="small"
-                    variant="filled"
                   />
                 </Box>
-                <Divider sx={{ mb: 2 }} />
-                <Typography variant="body2" sx={{ lineHeight: 1.6, mb: 2, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                  {report.executiveSummary}
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Tooltip title="View Report">
-                    <IconButton size="small" onClick={() => setSelectedReport(report)}>
-                      <VisibilityIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
+
+                {kpis.length > 0 && (
+                  <Box sx={{ px: 2.25, pb: 1.75, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    {kpis.slice(0, 3).map((k, i) => (
+                      <Box key={i} sx={{ minWidth: 62 }}>
+                        <Typography className="tabular-nums" sx={{ fontSize: '1.0625rem', fontWeight: 680, lineHeight: 1.2 }}>
+                          {k.value}
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.6875rem', color: 'text.secondary' }} noWrap>{k.name}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                )}
+
+                <Divider />
+                <Box sx={{ p: 2.25, flexGrow: 1 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ lineHeight: 1.65, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}
+                  >
+                    {report.executiveSummary}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ px: 2.25, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Button size="small" startIcon={<VisibilityIcon sx={{ fontSize: 15 }} />} onClick={() => setSelectedReport(report)}>
+                    View
+                  </Button>
+                  <Box sx={{ flexGrow: 1 }} />
                   <Tooltip title="Print / Save as PDF">
-                    <IconButton size="small" onClick={() => handlePrint(report)}>
-                      <PictureAsPdfIcon fontSize="small" />
-                    </IconButton>
+                    <IconButton size="small" onClick={() => handlePrint(report)}><PictureAsPdfIcon sx={{ fontSize: 17 }} /></IconButton>
                   </Tooltip>
                   <Tooltip title="Download CSV">
-                    <IconButton size="small" onClick={() => downloadCsv(report)}>
-                      <TableChartIcon fontSize="small" />
-                    </IconButton>
+                    <IconButton size="small" onClick={() => downloadCsv(report)}><TableChartIcon sx={{ fontSize: 17 }} /></IconButton>
                   </Tooltip>
                 </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
+              </Card>
+            </Grid>
+          );
+        })}
         {(!reports || reports.length === 0) && (
           <Grid item xs={12}>
             <Card>
-              <CardContent sx={{ textAlign: 'center', py: 6 }}>
-                <DescriptionIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>No Reports Yet</Typography>
-                <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-                  Generate your first executive report to see operational insights.
-                </Typography>
-                <Button variant="contained" startIcon={<AddIcon />} onClick={openGenerateDialog}>
-                  Generate Report
-                </Button>
-              </CardContent>
+              <EmptyState
+                icon={<DescriptionIcon />}
+                title="No reports yet"
+                description="Generate a report to capture this period's KPIs and executive summary as a shareable briefing document."
+                action={
+                  <Button variant="contained" size="small" startIcon={<AddIcon sx={{ fontSize: 16 }} />} onClick={openGenerateDialog}>
+                    Generate report
+                  </Button>
+                }
+              />
             </Card>
           </Grid>
         )}

@@ -1,35 +1,52 @@
 import { ReactNode } from 'react';
 import { Box, Typography } from '@mui/material';
-import { SvgIconComponent } from '@mui/icons-material';
 
 interface PageHeaderProps {
-  icon: SvgIconComponent;
   title: string;
-  subtitle?: string;
+  /** Tracked-out eyebrow above the title — orients the reader in the app. */
+  eyebrow?: string;
+  subtitle?: ReactNode;
   actions?: ReactNode;
+  /** Rendered flush against the title, e.g. a live count or status pill. */
+  meta?: ReactNode;
 }
 
-export default function PageHeader({ icon: Icon, title, subtitle, actions }: PageHeaderProps) {
+/**
+ * Page-level heading. Deliberately typographic rather than decorative — the old
+ * gradient icon tile competed with the content beneath it for attention.
+ */
+export default function PageHeader({ title, eyebrow, subtitle, actions, meta }: PageHeaderProps) {
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <Box
-          sx={{
-            width: 44, height: 44, borderRadius: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: (theme) => `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
-            color: 'primary.contrastText', flexShrink: 0,
-          }}
-        >
-          <Icon fontSize="medium" />
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-end',
+        flexWrap: 'wrap',
+        gap: 2,
+        mb: 3,
+        pb: 2.5,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+      }}
+    >
+      <Box sx={{ minWidth: 0 }}>
+        {eyebrow && (
+          <Typography variant="overline" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            {eyebrow}
+          </Typography>
+        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <Typography variant="h2" sx={{ lineHeight: 1.15 }}>{title}</Typography>
+          {meta}
         </Box>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1.2 }}>{title}</Typography>
-          {subtitle && (
-            <Typography variant="body2" color="text.secondary">{subtitle}</Typography>
-          )}
-        </Box>
+        {subtitle && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            {subtitle}
+          </Typography>
+        )}
       </Box>
-      {actions && <Box sx={{ display: 'flex', gap: 1 }}>{actions}</Box>}
+      {actions && <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>{actions}</Box>}
     </Box>
   );
 }

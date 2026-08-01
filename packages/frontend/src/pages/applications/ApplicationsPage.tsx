@@ -1,25 +1,153 @@
+import { Box, Typography, Grid, Card, Skeleton, Alert, Tooltip, Divider, useTheme } from '@mui/material';
 import {
-  Box, Typography, Grid, Card, CardContent, Chip, Divider, Skeleton,
-  CircularProgress, Alert, Tooltip,
-} from '@mui/material';
-import { Apps as AppsIcon, Warning as WarningIcon } from '@mui/icons-material';
+  WarningAmberOutlined as WarningIcon,
+  WidgetsOutlined as AppsIcon,
+  PersonOutlineOutlined as OwnerIcon,
+} from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import { applicationApi } from '../../services/api';
+import { applicationApi, Application } from '../../services/api';
 import { safeParseArray, criticalityColor, healthScoreColor } from '../../utils/chipColors';
 import PageHeader from '../../components/common/PageHeader';
+import StatusPill from '../../components/ui/StatusPill';
+import EmptyState from '../../components/ui/EmptyState';
 
-function MetricCell({ label, value, emphasize }: { label: string; value: React.ReactNode; emphasize?: boolean }) {
+/** Radial health gauge. The number is the message; the arc is the reinforcement. */
+function HealthGauge({ score }: { score: number }) {
+  const theme = useTheme();
+  const tone = healthScoreColor(score);
+  const size = 62;
+  const stroke = 5;
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - Math.max(0, Math.min(100, score)) / 100);
+
   return (
-    <Grid item xs={4}>
+    <Box sx={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <Box component="svg" width={size} height={size} sx={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={theme.palette.action.hover} strokeWidth={stroke} />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none"
+          stroke={theme.palette[tone].main}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 600ms ease' }}
+        />
+      </Box>
+      <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <Typography className="tabular-nums" sx={{ fontSize: '1.0625rem', fontWeight: 700, lineHeight: 1 }}>
+          {score}
+        </Typography>
+        <Typography sx={{ fontSize: '0.5625rem', color: 'text.muted', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+          health
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function Metric({ label, value, alert }: { label: string; value: number | string; alert?: boolean }) {
+  return (
+    <Box sx={{ flex: 1, minWidth: 0 }}>
       <Typography
-        variant="h6"
-        sx={{ fontWeight: 700, textAlign: 'center', lineHeight: 1.3 }}
-        color={emphasize ? 'error.main' : 'text.primary'}
+        className="tabular-nums"
+        sx={{ fontSize: '1.0625rem', fontWeight: 680, lineHeight: 1.2, color: alert ? 'error.main' : 'text.primary' }}
       >
         {value}
       </Typography>
-      <Typography variant="caption" color="text.secondary" display="block" textAlign="center">{label}</Typography>
-    </Grid>
+      <Typography sx={{ fontSize: '0.6875rem', color: 'text.secondary', letterSpacing: '0.02em' }} noWrap>
+        {label}
+      </Typography>
+    </Box>
+  );
+}
+
+function AppCard({ app }: { app: Application }) {
+  const health = app.healthScores?.[0];
+  const score = health?.healthScore ?? null;
+  const tone = score !== null ? healthScoreColor(score) : 'success';
+
+  return (
+    <Card
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        position: 'relative',
+        '&:hover': { borderColor: 'surface.borderStrong', boxShadow: 1 },
+      }}
+    >
+      {/* Health accent rail */}
+      {score !== null && (
+        <Box sx={{ height: 3, bgcolor: `${tone}.main`, flexShrink: 0 }} />
+      )}
+
+      <Box sx={{ p: 2.25, display: 'flex', flexDirection: 'column', gap: 1.75, flexGrow: 1 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+              <Typography variant="h6" noWrap sx={{ maxWidth: '100%' }}>{app.displayName}</Typography>
+              <StatusPill label={app.criticality} color={criticalityColor(app.criticality)} />
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {app.team}
+              {health?.riskLevel ? ` · ${health.riskLevel} risk` : ''}
+            </Typography>
+          </Box>
+          {score !== null && (
+            <Tooltip title={`Composite health score: ${score}/100`}>
+              <Box><HealthGauge score={score} /></Box>
+            </Tooltip>
+          )}
+        </Box>
+
+        {health && (
+          <>
+            <Divider />
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              <Metric label="Tickets" value={health.ticketVolume} />
+              <Metric label="SLA breaches" value={health.slaViolations} alert={health.slaViolations > 0} />
+              <Metric label="Critical" value={health.criticalIncidents} alert={health.criticalIncidents > 0} />
+              <Metric label="Avg resolve" value={`${health.resolutionTime}h`} />
+            </Box>
+          </>
+        )}
+
+        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+          {safeParseArray(app.technologies).slice(0, 5).map((tech) => (
+            <Box
+              key={tech}
+              sx={{
+                px: 0.75, py: 0.25, borderRadius: 0.75, border: '1px solid', borderColor: 'divider',
+                bgcolor: 'surface.sunken', fontSize: '0.6875rem', color: 'text.secondary', fontWeight: 500,
+              }}
+            >
+              {tech}
+            </Box>
+          ))}
+        </Box>
+
+        <Box sx={{ flexGrow: 1 }} />
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pt: 0.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          <OwnerIcon sx={{ fontSize: 15, color: 'text.muted' }} />
+          <Typography variant="caption" color="text.secondary" noWrap>{app.owner}</Typography>
+        </Box>
+
+        {health?.recommendedActions && (
+          <Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: 'surface.sunken', border: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="overline" color="text.secondary" sx={{ display: 'block', fontSize: '0.625rem', mb: 0.25 }}>
+              Recommended action
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+              {health.recommendedActions}
+            </Typography>
+          </Box>
+        )}
+      </Box>
+    </Card>
   );
 }
 
@@ -29,134 +157,57 @@ export default function ApplicationsPage() {
     queryFn: () => applicationApi.getAll().then((r) => r.data),
   });
 
-  if (isLoading) {
-    return (
-      <Grid container spacing={3}>
-        {[...Array(6)].map((_, i) => (
-          <Grid item xs={12} sm={6} md={4} key={i}>
-            <Skeleton variant="rectangular" height={320} sx={{ borderRadius: 2 }} />
-          </Grid>
-        ))}
-      </Grid>
-    );
-  }
-
   // Worst health first — the applications needing attention lead the briefing.
   const sorted = [...(applications ?? [])].sort(
     (a, b) => (a.healthScores?.[0]?.healthScore ?? 101) - (b.healthScores?.[0]?.healthScore ?? 101)
   );
-  const atRisk = sorted.filter((a) => (a.healthScores?.[0]?.healthScore ?? 100) < 60).length;
+  const atRisk = sorted.filter((a) => (a.healthScores?.[0]?.healthScore ?? 100) < 60);
 
   return (
-    <Box sx={{ flexGrow: 1 }}>
+    <Box>
       <PageHeader
-        icon={AppsIcon}
+        eyebrow="Operations"
         title="Applications"
-        subtitle={`${applications?.length ?? 0} applications monitored · sorted by health score`}
+        subtitle="Composite health derived from ticket volume, severity, SLA performance, and critical incidents"
+        meta={
+          !isLoading && (
+            <StatusPill
+              label={`${applications?.length ?? 0} monitored`}
+              color="default"
+              variant="ghost"
+            />
+          )
+        }
       />
 
-      {atRisk > 0 && (
-        <Alert severity="warning" icon={<WarningIcon />} sx={{ mb: 3 }}>
-          <strong>{atRisk}</strong> application{atRisk === 1 ? '' : 's'} scoring below 60 and requiring attention.
+      {!isLoading && atRisk.length > 0 && (
+        <Alert severity="warning" icon={<WarningIcon sx={{ fontSize: 19 }} />} sx={{ mb: 2 }}>
+          <Typography variant="body2" component="span">
+            <strong>{atRisk.length}</strong> application{atRisk.length === 1 ? '' : 's'} scoring below 60 —{' '}
+            {atRisk.map((a) => a.displayName).join(', ')}
+          </Typography>
         </Alert>
       )}
 
-      <Grid container spacing={3}>
-        {sorted.map((app) => {
-          const health = app.healthScores?.[0];
-          const healthScore = health?.healthScore ?? null;
-          return (
-            <Grid item xs={12} sm={6} md={4} key={app.id}>
-              <Card sx={{ height: '100%', '&:hover': { boxShadow: 4, borderColor: 'primary.main' } }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1, gap: 1 }}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{app.displayName}</Typography>
-                      <Typography variant="caption" color="text.secondary">{app.team}</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
-                      <Chip label={app.criticality} color={criticalityColor(app.criticality)} size="small" />
-                      {health?.riskLevel && (
-                        <Typography variant="caption" color="text.secondary">{health.riskLevel} risk</Typography>
-                      )}
-                    </Box>
-                  </Box>
-
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {app.description}
-                  </Typography>
-
-                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2 }}>
-                    {safeParseArray(app.technologies).map((tech) => (
-                      <Chip key={tech} label={tech} size="small" variant="outlined" />
-                    ))}
-                  </Box>
-
-                  <Divider sx={{ mb: 2 }} />
-
-                  {health && (
-                    <>
-                      <Grid container spacing={1} sx={{ mb: 2 }}>
-                        <MetricCell label="Tickets" value={health.ticketVolume} />
-                        <MetricCell label="SLA Breaches" value={health.slaViolations} emphasize={health.slaViolations > 0} />
-                        <MetricCell label="Critical" value={health.criticalIncidents} emphasize={health.criticalIncidents > 0} />
-                      </Grid>
-                      <Divider sx={{ mb: 2 }} />
-                    </>
-                  )}
-
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography variant="caption" color="text.secondary" display="block">Owner</Typography>
-                      <Typography variant="body2" noWrap>{app.owner}</Typography>
-                      {health && (
-                        <Typography variant="caption" color="text.secondary">
-                          Avg resolution {health.resolutionTime}h
-                        </Typography>
-                      )}
-                    </Box>
-                    {healthScore !== null && (
-                      <Tooltip title={`Health score ${healthScore}/100`}>
-                        <Box sx={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-                          <CircularProgress
-                            variant="determinate"
-                            value={100}
-                            size={56}
-                            thickness={4}
-                            sx={{ color: 'action.hover', position: 'absolute' }}
-                          />
-                          <CircularProgress
-                            variant="determinate"
-                            value={healthScore}
-                            size={56}
-                            thickness={4}
-                            color={healthScoreColor(healthScore)}
-                          />
-                          <Box sx={{
-                            top: 0, left: 0, bottom: 0, right: 0, position: 'absolute',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                            <Typography variant="body2" sx={{ fontWeight: 700 }}>{healthScore}</Typography>
-                          </Box>
-                        </Box>
-                      </Tooltip>
-                    )}
-                  </Box>
-
-                  {health?.recommendedActions && (
-                    <Box sx={{ mt: 2, p: 1.5, borderRadius: 1.5, bgcolor: 'action.hover' }}>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ fontWeight: 600, mb: 0.5 }}>
-                        Recommended Action
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">{health.recommendedActions}</Typography>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
+      {isLoading ? (
+        <Grid container spacing={2}>
+          {[...Array(6)].map((_, i) => (
+            <Grid item xs={12} md={6} xl={4} key={i}>
+              <Skeleton variant="rounded" height={286} />
             </Grid>
-          );
-        })}
-      </Grid>
+          ))}
+        </Grid>
+      ) : sorted.length === 0 ? (
+        <Card><EmptyState icon={<AppsIcon />} title="No applications" description="No applications are currently being monitored." /></Card>
+      ) : (
+        <Grid container spacing={2}>
+          {sorted.map((app) => (
+            <Grid item xs={12} md={6} xl={4} key={app.id}>
+              <AppCard app={app} />
+            </Grid>
+          ))}
+        </Grid>
+      )}
     </Box>
   );
 }

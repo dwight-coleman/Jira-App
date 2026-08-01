@@ -1,250 +1,310 @@
-import { Box, Grid, Card, CardContent, Typography, Skeleton, useTheme } from '@mui/material';
+import { Box, Grid, Skeleton, Typography, useTheme, Divider } from '@mui/material';
 import { Theme } from '@mui/material/styles';
 import {
-  Dashboard as DashboardIcon,
-  ConfirmationNumber as TicketIcon,
-  CheckCircle as ResolvedIcon,
-  Warning as CriticalIcon,
-  Speed as SlaIcon,
-  Apps as AppsIcon,
-  PriorityHigh as PriorityIcon,
-  Timeline as TimelineIcon,
-  Inbox as InboxIcon,
-  HourglassBottom as HourglassIcon,
-  ShowChart as ShowChartIcon,
-  TrackChanges as TargetIcon,
+  ConfirmationNumberOutlined as TicketIcon,
+  InboxOutlined as OpenIcon,
+  CheckCircleOutlineOutlined as ResolvedIcon,
+  ErrorOutlineOutlined as CriticalIcon,
+  SpeedOutlined as SlaIcon,
+  HourglassBottomOutlined as TimeIcon,
+  ShowChartOutlined as TrendIcon,
+  TrackChangesOutlined as TargetIcon,
+  WidgetsOutlined as AppsIcon,
+  FlagOutlined as PriorityIcon,
+  DonutLargeOutlined as StatusIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import {
-  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip as ChartTooltip, Legend, ResponsiveContainer, ReferenceLine,
+  BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, AreaChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { dashboardApi } from '../../services/api';
 import PageHeader from '../../components/common/PageHeader';
+import SectionCard from '../../components/ui/SectionCard';
+import StatTile from '../../components/ui/StatTile';
+import ChartTooltip from '../../components/ui/ChartTooltip';
+import StatusPill from '../../components/ui/StatusPill';
 import { priorityColor, statusColor, ChipColor } from '../../utils/chipColors';
 import { categoricalPalette, chartChrome } from '../../theme/chartPalette';
 
-type SemanticColor = 'primary' | 'success' | 'error' | 'info' | 'warning' | 'secondary';
+const SLA_TARGET = 95;
 
-function KpiCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: React.ReactNode; color: SemanticColor }) {
-  return (
-    <Card sx={{ height: '100%', position: 'relative', overflow: 'hidden' }}>
-      <Box sx={{ position: 'absolute', top: 0, left: 0, width: 4, height: '100%', bgcolor: `${color}.main` }} />
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2, pl: 3 }}>
-        <Box
-          sx={{
-            width: 48, height: 48, borderRadius: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            background: (theme) => `linear-gradient(135deg, ${theme.palette[color].main}, ${theme.palette[color].dark})`,
-            color: `${color}.contrastText`,
-          }}
-        >
-          {icon}
-        </Box>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="h4" sx={{ fontWeight: 700, lineHeight: 1.2 }}>{value}</Typography>
-          <Typography variant="body2" color="text.secondary" noWrap>{label}</Typography>
-        </Box>
-      </CardContent>
-    </Card>
-  );
+function toneHex(theme: Theme, c: ChipColor): string {
+  if (c === 'default') return theme.palette.text.disabled;
+  return theme.palette[c].main;
 }
 
-function ChartCard({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
-  return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <Box sx={{ color: 'text.secondary', display: 'flex' }}>{icon}</Box>
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>{title}</Typography>
-        </Box>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
-function chipColorToHex(theme: Theme, color: ChipColor): string {
-  if (color === 'default') return theme.palette.mode === 'dark' ? theme.palette.grey[500] : theme.palette.grey[600];
-  return theme.palette[color].main;
+/** Percent change between the last two points of a trend series. */
+function trendDelta(points: { value: number }[] | undefined) {
+  if (!points || points.length < 2) return undefined;
+  const prev = points[points.length - 2].value;
+  const curr = points[points.length - 1].value;
+  if (!prev) return undefined;
+  return Math.round(((curr - prev) / prev) * 100);
 }
 
 export default function Dashboard() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
   const chrome = chartChrome(isDark);
-  const categorical = categoricalPalette(isDark);
+  const palette = categoricalPalette(isDark);
 
-  const tooltipStyle = {
-    contentStyle: { background: chrome.tooltipBg, border: `1px solid ${chrome.tooltipBorder}`, borderRadius: 8, fontSize: 13 },
-    labelStyle: { color: chrome.tooltipText, fontWeight: 600 },
-    itemStyle: { color: chrome.tooltipText },
+  const axis = {
+    tick: { fontSize: 11, fill: chrome.axisText },
+    axisLine: { stroke: chrome.axis },
+    tickLine: false as const,
   };
 
   const { data: kpis, isLoading: kpisLoading, dataUpdatedAt } = useQuery({
     queryKey: ['dashboard-kpis'],
     queryFn: () => dashboardApi.getKPIs().then((r) => r.data),
   });
-
-  const { data: monthlyTrend, isLoading: trendLoading } = useQuery({
+  const { data: byApplication, isLoading: appLoading } = useQuery({
+    queryKey: ['dashboard-tickets-by-application'],
+    queryFn: () => dashboardApi.getTicketsByApplication().then((r) => r.data),
+  });
+  const { data: byPriority, isLoading: prioLoading } = useQuery({
+    queryKey: ['dashboard-tickets-by-priority'],
+    queryFn: () => dashboardApi.getTicketsByPriority().then((r) => r.data),
+  });
+  const { data: byStatus, isLoading: statusLoading } = useQuery({
+    queryKey: ['dashboard-tickets-by-status'],
+    queryFn: () => dashboardApi.getTicketsByStatus().then((r) => r.data),
+  });
+  const { data: volumeTrend, isLoading: volLoading } = useQuery({
     queryKey: ['dashboard-monthly-trend'],
     queryFn: () => dashboardApi.getMonthlyTrend().then((r) => r.data),
   });
-
-  const { data: slaTrend, isLoading: slaTrendLoading } = useQuery({
+  const { data: slaTrend, isLoading: slaLoading } = useQuery({
     queryKey: ['dashboard-sla-trend'],
     queryFn: () => dashboardApi.getSLACompliance().then((r) => r.data),
   });
 
-  const trendData = (monthlyTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
+  const volumeData = (volumeTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
   const slaData = (slaTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
 
-  const { data: byApplication, isLoading: byAppLoading } = useQuery({
-    queryKey: ['dashboard-tickets-by-application'],
-    queryFn: () => dashboardApi.getTicketsByApplication().then((r) => r.data),
-  });
+  const slaValue = Number(kpis?.slaCompliance ?? 0);
+  const slaHealthy = slaValue >= SLA_TARGET;
+  const resolutionRate = kpis?.totalTickets
+    ? Math.round((kpis.resolvedTickets / kpis.totalTickets) * 100)
+    : 0;
 
-  const { data: byPriority, isLoading: byPriorityLoading } = useQuery({
-    queryKey: ['dashboard-tickets-by-priority'],
-    queryFn: () => dashboardApi.getTicketsByPriority().then((r) => r.data),
-  });
-
-  const { data: byStatus, isLoading: byStatusLoading } = useQuery({
-    queryKey: ['dashboard-tickets-by-status'],
-    queryFn: () => dashboardApi.getTicketsByStatus().then((r) => r.data),
-  });
+  const tiles = [
+    { label: 'Total Tickets', value: kpis?.totalTickets ?? 0, icon: <TicketIcon />, tone: 'primary' as const,
+      context: 'Reporting period', delta: trendDelta(volumeTrend as { value: number }[] | undefined), goodDirection: 'down' as const },
+    { label: 'Open', value: kpis?.openTickets ?? 0, icon: <OpenIcon />, tone: 'warning' as const, context: 'Awaiting resolution' },
+    { label: 'Resolved', value: kpis?.resolvedTickets ?? 0, icon: <ResolvedIcon />, tone: 'success' as const, context: `${resolutionRate}% of total` },
+    { label: 'Critical', value: kpis?.criticalTickets ?? 0, icon: <CriticalIcon />, tone: 'error' as const, context: 'Highest priority' },
+    { label: 'SLA Compliance', value: `${slaValue}%`, icon: <SlaIcon />, tone: slaHealthy ? 'success' as const : 'error' as const,
+      context: `Target ${SLA_TARGET}%`, hint: `${slaHealthy ? 'Meeting' : 'Below'} the ${SLA_TARGET}% target` },
+    { label: 'Avg Resolution', value: `${kpis?.avgResolutionTime ?? 0}h`, icon: <TimeIcon />, tone: 'info' as const, context: 'Mean time to resolve' },
+  ];
 
   return (
-    <Box sx={{ flexGrow: 1 }}>
+    <Box>
       <PageHeader
-        icon={DashboardIcon}
+        eyebrow="Overview"
         title="Executive Dashboard"
-        subtitle={`Operational overview across all applications · Data as of ${dataUpdatedAt ? format(new Date(dataUpdatedAt), "MMM d, yyyy h:mm a") : '—'}`}
+        subtitle={`Operational posture across all supported applications${dataUpdatedAt ? ` · updated ${format(new Date(dataUpdatedAt), 'MMM d, h:mm a')}` : ''}`}
+        meta={
+          !kpisLoading && (
+            <StatusPill
+              label={slaHealthy ? 'SLA on target' : 'SLA below target'}
+              color={slaHealthy ? 'success' : 'error'}
+            />
+          )
+        }
       />
 
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid item xs={6} sm={4} md={2}>
-          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<TicketIcon />} label="Total Tickets" value={kpis?.totalTickets ?? 0} color="primary" />
-          )}
+      {/* KPI band */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        {tiles.map((t) => (
+          <Grid item xs={6} sm={4} lg={2} key={t.label}>
+            {kpisLoading ? (
+              <Skeleton variant="rounded" height={104} />
+            ) : (
+              <StatTile
+                label={t.label}
+                value={t.value}
+                icon={t.icon}
+                tone={t.tone}
+                context={t.context}
+                hint={t.hint}
+                delta={t.delta !== undefined ? { value: t.delta, goodDirection: t.goodDirection } : undefined}
+              />
+            )}
+          </Grid>
+        ))}
+      </Grid>
+
+      {/* Trends */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        <Grid item xs={12} lg={6}>
+          <SectionCard
+            title="Ticket Volume"
+            eyebrow="6-month trend"
+            icon={<TrendIcon />}
+            actions={
+              volumeData.length > 0 && (
+                <Typography variant="caption" color="text.secondary" className="tabular-nums">
+                  {volumeData[volumeData.length - 1].value} this period
+                </Typography>
+              )
+            }
+          >
+            {volLoading ? (
+              <Skeleton variant="rounded" height={228} />
+            ) : (
+              <ResponsiveContainer width="100%" height={228}>
+                <AreaChart data={volumeData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="volFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={palette[0]} stopOpacity={0.22} />
+                      <stop offset="100%" stopColor={palette[0]} stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="2 4" stroke={chrome.grid} vertical={false} />
+                  <XAxis dataKey="label" {...axis} />
+                  <YAxis allowDecimals={false} {...axis} width={38} />
+                  <RTooltip content={<ChartTooltip seriesLabel="Tickets" />} cursor={{ stroke: chrome.axis, strokeWidth: 1 }} />
+                  <Area
+                    type="monotone" dataKey="value" stroke={palette[0]} strokeWidth={2}
+                    fill="url(#volFill)" dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: theme.palette.background.paper }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </SectionCard>
         </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<InboxIcon />} label="Open" value={kpis?.openTickets ?? 0} color="warning" />
-          )}
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<ResolvedIcon />} label="Resolved" value={kpis?.resolvedTickets ?? 0} color="success" />
-          )}
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<CriticalIcon />} label="Critical" value={kpis?.criticalTickets ?? 0} color="error" />
-          )}
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<SlaIcon />} label="SLA Compliance" value={`${kpis?.slaCompliance ?? 0}%`} color="info" />
-          )}
-        </Grid>
-        <Grid item xs={6} sm={4} md={2}>
-          {kpisLoading ? <Skeleton variant="rectangular" height={92} sx={{ borderRadius: 2 }} /> : (
-            <KpiCard icon={<HourglassIcon />} label="Avg Resolution" value={`${kpis?.avgResolutionTime ?? 0}h`} color="secondary" />
-          )}
+
+        <Grid item xs={12} lg={6}>
+          <SectionCard
+            title="SLA Compliance"
+            eyebrow={`Target ${SLA_TARGET}%`}
+            icon={<TargetIcon />}
+            actions={<StatusPill label={slaHealthy ? 'On target' : 'Below target'} color={slaHealthy ? 'success' : 'error'} />}
+          >
+            {slaLoading ? (
+              <Skeleton variant="rounded" height={228} />
+            ) : (
+              <ResponsiveContainer width="100%" height={228}>
+                <LineChart data={slaData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={chrome.grid} vertical={false} />
+                  <XAxis dataKey="label" {...axis} />
+                  <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} {...axis} width={38} />
+                  <RTooltip content={<ChartTooltip seriesLabel="Compliance" format={(v) => `${v}%`} />} cursor={{ stroke: chrome.axis, strokeWidth: 1 }} />
+                  <ReferenceLine
+                    y={SLA_TARGET}
+                    stroke={chrome.reference}
+                    strokeDasharray="5 4"
+                    label={{ value: `${SLA_TARGET}%`, position: 'right', fill: chrome.axisText, fontSize: 10 }}
+                  />
+                  <Line
+                    type="monotone" dataKey="value" stroke={palette[2]} strokeWidth={2}
+                    dot={{ r: 2.5, fill: palette[2], strokeWidth: 0 }}
+                    activeDot={{ r: 4, strokeWidth: 2, stroke: theme.palette.background.paper }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </SectionCard>
         </Grid>
       </Grid>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <ChartCard icon={<ShowChartIcon fontSize="small" />} title="Monthly Ticket Volume">
-            {trendLoading ? <Skeleton variant="rectangular" height={240} sx={{ borderRadius: 1 }} /> : (
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={trendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chrome.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <ChartTooltip {...tooltipStyle} formatter={(value: number) => [value, 'Tickets']} />
-                  <Line type="monotone" dataKey="value" stroke={categorical[0]} strokeWidth={2} dot={{ r: 3, fill: categorical[0] }} activeDot={{ r: 5 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </ChartCard>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <ChartCard icon={<TargetIcon fontSize="small" />} title="SLA Compliance Trend (target 95%)">
-            {slaTrendLoading ? <Skeleton variant="rectangular" height={240} sx={{ borderRadius: 1 }} /> : (
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={slaData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chrome.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <ChartTooltip {...tooltipStyle} formatter={(value: number) => [`${value}%`, 'SLA Compliance']} />
-                  <ReferenceLine y={95} stroke={theme.palette.text.secondary} strokeDasharray="6 4" />
-                  <Line type="monotone" dataKey="value" stroke={categorical[2]} strokeWidth={2} dot={{ r: 3, fill: categorical[2] }} activeDot={{ r: 5 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
-          </ChartCard>
-        </Grid>
-
-        <Grid item xs={12} md={7}>
-          <ChartCard icon={<AppsIcon fontSize="small" />} title="Tickets by Application">
-            {byAppLoading ? <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 1 }} /> : (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={byApplication ?? []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chrome.grid} vertical={false} />
-                  <XAxis dataKey="application" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <ChartTooltip {...tooltipStyle} cursor={{ fill: theme.palette.action.hover }} />
-                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                    {(byApplication ?? []).map((entry, i) => (
-                      <Cell key={entry.application ?? i} fill={categorical[i % categorical.length]} />
+      {/* Distributions */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} lg={5}>
+          <SectionCard title="Volume by Application" eyebrow="Distribution" icon={<AppsIcon />}>
+            {appLoading ? (
+              <Skeleton variant="rounded" height={252} />
+            ) : (
+              <ResponsiveContainer width="100%" height={252}>
+                <BarChart data={byApplication ?? []} layout="vertical" margin={{ top: 0, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="2 4" stroke={chrome.grid} horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} {...axis} />
+                  <YAxis dataKey="application" type="category" width={62} {...axis} />
+                  <RTooltip content={<ChartTooltip seriesLabel="Tickets" />} cursor={{ fill: theme.palette.action.hover }} />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={14}>
+                    {(byApplication ?? []).map((e, i) => (
+                      <Cell key={e.application ?? i} fill={palette[i % palette.length]} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </ChartCard>
+          </SectionCard>
         </Grid>
 
-        <Grid item xs={12} md={5}>
-          <ChartCard icon={<PriorityIcon fontSize="small" />} title="Tickets by Priority">
-            {byPriorityLoading ? <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 1 }} /> : (
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={byPriority ?? []} dataKey="count" nameKey="priority" outerRadius={100} label>
-                    {(byPriority ?? []).map((entry) => (
-                      <Cell key={entry.priority} fill={chipColorToHex(theme, priorityColor(entry.priority as string))} />
-                    ))}
-                  </Pie>
-                  <ChartTooltip {...tooltipStyle} />
-                  <Legend wrapperStyle={{ fontSize: 13 }} />
-                </PieChart>
-              </ResponsiveContainer>
+        <Grid item xs={12} sm={6} lg={3}>
+          <SectionCard title="By Priority" eyebrow="Distribution" icon={<PriorityIcon />}>
+            {prioLoading ? (
+              <Skeleton variant="rounded" height={252} />
+            ) : (
+              <Box>
+                <ResponsiveContainer width="100%" height={150}>
+                  <PieChart>
+                    <Pie
+                      data={byPriority ?? []}
+                      dataKey="count"
+                      nameKey="priority"
+                      innerRadius={42}
+                      outerRadius={64}
+                      paddingAngle={2}
+                      stroke={theme.palette.background.paper}
+                      strokeWidth={2}
+                    >
+                      {(byPriority ?? []).map((e) => (
+                        <Cell key={e.priority} fill={toneHex(theme, priorityColor(e.priority as string))} />
+                      ))}
+                    </Pie>
+                    <RTooltip content={<ChartTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <Divider sx={{ my: 1.5 }} />
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                  {(byPriority ?? []).map((e) => (
+                    <Box key={e.priority} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875, minWidth: 0 }}>
+                        <Box sx={{ width: 7, height: 7, borderRadius: 0.5, flexShrink: 0, bgcolor: toneHex(theme, priorityColor(e.priority as string)) }} />
+                        <Typography variant="caption" color="text.secondary" noWrap>{e.priority}</Typography>
+                      </Box>
+                      <Typography variant="caption" className="tabular-nums" sx={{ fontWeight: 650 }}>{e.count}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Box>
             )}
-          </ChartCard>
+          </SectionCard>
         </Grid>
 
-        <Grid item xs={12}>
-          <ChartCard icon={<TimelineIcon fontSize="small" />} title="Tickets by Status">
-            {byStatusLoading ? <Skeleton variant="rectangular" height={260} sx={{ borderRadius: 1 }} /> : (
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={byStatus ?? []} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke={chrome.grid} horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <YAxis dataKey="status" type="category" width={160} tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: chrome.axis }} tickLine={false} />
-                  <ChartTooltip {...tooltipStyle} cursor={{ fill: theme.palette.action.hover }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                    {(byStatus ?? []).map((entry, i) => (
-                      <Cell key={entry.status ?? i} fill={chipColorToHex(theme, statusColor(entry.status as string))} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+        <Grid item xs={12} sm={6} lg={4}>
+          <SectionCard title="By Status" eyebrow="Workflow state" icon={<StatusIcon />}>
+            {statusLoading ? (
+              <Skeleton variant="rounded" height={252} />
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.375 }}>
+                {(() => {
+                  const rows = byStatus ?? [];
+                  const max = Math.max(...rows.map((r) => Number(r.count) || 0), 1);
+                  return rows.map((r) => {
+                    const hex = toneHex(theme, statusColor(r.status as string));
+                    return (
+                      <Box key={r.status as string}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                          <Typography variant="caption" color="text.secondary" noWrap>{r.status}</Typography>
+                          <Typography variant="caption" className="tabular-nums" sx={{ fontWeight: 650 }}>{r.count}</Typography>
+                        </Box>
+                        <Box sx={{ height: 6, borderRadius: 999, bgcolor: 'action.hover', overflow: 'hidden' }}>
+                          <Box sx={{ width: `${(Number(r.count) / max) * 100}%`, height: '100%', borderRadius: 999, bgcolor: hex, transition: 'width 400ms ease' }} />
+                        </Box>
+                      </Box>
+                    );
+                  });
+                })()}
+              </Box>
             )}
-          </ChartCard>
+          </SectionCard>
         </Grid>
       </Grid>
     </Box>
