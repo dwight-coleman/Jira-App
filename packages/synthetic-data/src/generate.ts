@@ -176,6 +176,9 @@ async function main() {
     prisma.trendHistory.deleteMany(),
     prisma.engineerPerformance.deleteMany(),
     prisma.engineerWorkload.deleteMany(),
+    prisma.recurringIssue.deleteMany(),
+    prisma.operationalRisk.deleteMany(),
+    prisma.actionItem.deleteMany(),
     prisma.ticket.deleteMany(),
     prisma.engineer.deleteMany(),
     prisma.user.deleteMany(),
@@ -808,6 +811,195 @@ async function main() {
     prevSla = sla;
   }
   console.log('✅ Seeded trend history (ticket_volume + sla_compliance, 6 months)');
+
+  // --- Governance layer: recurring issues, operational risks, action items ---
+  // Derived from the seeded tickets so the register reflects real patterns in
+  // the data rather than free-floating narrative.
+  console.log('🔁 Seeding recurring issues...');
+
+  const byApp = new Map<string, typeof allTickets>();
+  for (const t of allTickets) {
+    if (!byApp.has(t.application)) byApp.set(t.application, []);
+    byApp.get(t.application)!.push(t);
+  }
+  const breachedByApp = Array.from(byApp.entries())
+    .map(([app, list]) => ({ app, list, breaches: list.filter((t) => t.sla?.status === 'Breached').length }))
+    .sort((a, b) => b.breaches - a.breaches);
+
+  const recurringTemplates = [
+    {
+      title: 'Credential expiry causing authentication outages',
+      description: 'Service-account credentials expire without advance alerting, producing sudden authentication failures across dependent services.',
+      pattern: 'Authentication failures clustered immediately after credential expiry dates, with no preceding change activity.',
+      rootCause: 'Credential rotation is manual and not covered by expiry alerting.',
+      currentWorkaround: 'On-call engineer rotates the credential and redeploys the affected service.',
+      permanentFix: 'Automate rotation for all service accounts and alert 14 days ahead of expiry.',
+      fixStatus: 'in_progress', businessImpact: 'High', slaImpact: 8.5, costEstimate: 42000, category: 'Reliability',
+    },
+    {
+      title: 'Unbounded resource growth in long-running workers',
+      description: 'Batch and streaming workers accumulate memory across iterations until the orchestrator terminates them mid-run.',
+      pattern: 'Steady memory climb across batches, terminations concentrated in overnight processing windows.',
+      rootCause: 'Caches and buffers are not released between work units.',
+      currentWorkaround: 'Scheduled worker restarts between batches.',
+      permanentFix: 'Explicit resource release per work unit plus a soak test in CI.',
+      fixStatus: 'in_progress', businessImpact: 'Medium', slaImpact: 5.2, costEstimate: 28000, category: 'Performance',
+    },
+    {
+      title: 'Upstream schema and schedule changes breaking consumers',
+      description: 'Producing teams change data contracts or delivery timing without compatibility review, breaking downstream pipelines.',
+      pattern: 'Downstream failures appearing within one processing cycle of an upstream deployment or schedule change.',
+      rootCause: 'No enforced compatibility review or consumer-impact analysis before upstream changes ship.',
+      currentWorkaround: 'Restore the removed field or realign the pipeline trigger window after the fact.',
+      permanentFix: 'Mandatory schema compatibility gate with automated consumer-impact detection.',
+      fixStatus: 'not_started', businessImpact: 'High', slaImpact: 11.3, costEstimate: 65000, category: 'Data Integrity',
+    },
+    {
+      title: 'Capacity ceilings reached during peak windows',
+      description: 'Connection pools, rate limits, and handler capacity are sized for average load and saturate during predictable peaks.',
+      pattern: 'Errors concentrated at market open, month-end close, and partner batch windows.',
+      rootCause: 'Capacity is statically provisioned against average rather than peak demand.',
+      currentWorkaround: 'Manual pre-scaling ahead of known peak windows.',
+      permanentFix: 'Demand-aware autoscaling with utilisation alerting ahead of saturation.',
+      fixStatus: 'not_started', businessImpact: 'High', slaImpact: 9.7, costEstimate: 55000, category: 'Capacity',
+    },
+  ];
+
+  for (let i = 0; i < recurringTemplates.length; i++) {
+    const tpl = recurringTemplates[i];
+    const target = breachedByApp[i % breachedByApp.length];
+    const related = target.list.slice(0, 3);
+    const owner = getRandomElement(ENGINEERS);
+    await prisma.recurringIssue.create({
+      data: {
+        title: tpl.title,
+        description: tpl.description,
+        pattern: tpl.pattern,
+        frequency: Math.max(2, related.length + Math.floor(Math.random() * 4)),
+        affectedApplications: JSON.stringify([target.app]),
+        affectedTickets: JSON.stringify(related.map((t) => t.key)),
+        rootCause: tpl.rootCause,
+        currentWorkaround: tpl.currentWorkaround,
+        permanentFix: tpl.permanentFix,
+        fixStatus: tpl.fixStatus,
+        fixOwner: owner.name,
+        fixTargetDate: addDays(new Date(), 21 + i * 18),
+        businessImpact: tpl.businessImpact,
+        slaImpact: tpl.slaImpact,
+        costEstimate: tpl.costEstimate,
+        aiConfidence: Math.round((0.78 + Math.random() * 0.18) * 100) / 100,
+        identifiedAt: subDays(new Date(), 40 - i * 6),
+        lastOccurrence: subDays(new Date(), 2 + i * 3),
+      },
+    });
+  }
+  console.log(`✅ Seeded ${recurringTemplates.length} recurring issues`);
+
+  console.log('⚠️  Seeding operational risks...');
+  const likelihoodScale: Record<string, number> = { Low: 1, Medium: 2, High: 3, 'Very High': 4 };
+  const impactScale: Record<string, number> = { Minor: 1, Moderate: 2, Major: 3, Severe: 4 };
+
+  const riskTemplates = [
+    {
+      title: 'Single points of failure in critical trading path',
+      description: 'Order routing depends on a primary market-data feed with manual failover, concentrating outage risk in a revenue-critical path.',
+      likelihood: 'Medium', impact: 'Severe', category: 'Availability',
+      mitigation: 'Complete automatic feed failover and run quarterly failover exercises during low-volume windows.',
+      status: 'open',
+    },
+    {
+      title: 'Manual credential management across service accounts',
+      description: 'Service-account credentials are rotated manually with no expiry alerting, creating recurring outage and audit exposure.',
+      likelihood: 'High', impact: 'Major', category: 'Security',
+      mitigation: 'Move all service accounts to automated rotation backed by the secret store; alert ahead of expiry.',
+      status: 'mitigating',
+    },
+    {
+      title: 'Data contract changes lack compatibility enforcement',
+      description: 'Upstream producers can ship breaking schema changes without review, risking silent corruption of downstream reporting.',
+      likelihood: 'High', impact: 'Major', category: 'Data Integrity',
+      mitigation: 'Enforce a schema compatibility gate in the deployment pipeline with consumer-impact detection.',
+      status: 'open',
+    },
+    {
+      title: 'Key-person concentration on finance systems',
+      description: 'Deep knowledge of the GL reconciliation pipeline is concentrated in a small number of engineers, extending recovery time during month-end incidents.',
+      likelihood: 'Medium', impact: 'Major', category: 'Operational',
+      mitigation: 'Document reconciliation runbooks and cross-train a secondary responder per finance system.',
+      status: 'open',
+    },
+    {
+      title: 'Peak-window capacity provisioned against average load',
+      description: 'Connection pools and rate limits saturate during predictable peak windows, degrading partner-facing availability.',
+      likelihood: 'High', impact: 'Moderate', category: 'Capacity',
+      mitigation: 'Introduce demand-aware autoscaling and utilisation alerting ahead of saturation thresholds.',
+      status: 'mitigating',
+    },
+    {
+      title: 'SLA compliance trending below target',
+      description: 'Aggregate SLA compliance is materially below the 95% commitment, concentrated in applications with recurring unresolved defects.',
+      likelihood: 'Very High', impact: 'Moderate', category: 'Service Delivery',
+      mitigation: 'Prioritise permanent fixes for the top recurring issues and rebalance workload away from saturated engineers.',
+      status: 'open',
+    },
+  ];
+
+  for (let i = 0; i < riskTemplates.length; i++) {
+    const tpl = riskTemplates[i];
+    const target = breachedByApp[i % breachedByApp.length];
+    const owner = APPLICATIONS.find((a) => a.name === target.app) ?? getRandomElement(APPLICATIONS);
+    await prisma.operationalRisk.create({
+      data: {
+        title: tpl.title,
+        description: tpl.description,
+        likelihood: tpl.likelihood,
+        impact: tpl.impact,
+        riskScore: (likelihoodScale[tpl.likelihood] ?? 2) * (impactScale[tpl.impact] ?? 2),
+        category: tpl.category,
+        affectedApplications: JSON.stringify([target.app]),
+        affectedTeams: JSON.stringify([owner.team]),
+        mitigation: tpl.mitigation,
+        owner: owner.owner,
+        status: tpl.status,
+        identifiedAt: subDays(new Date(), 55 - i * 5),
+        lastReviewedAt: subDays(new Date(), 5 + i),
+        nextReviewAt: addDays(new Date(), 25 - i * 2),
+      },
+    });
+  }
+  console.log(`✅ Seeded ${riskTemplates.length} operational risks`);
+
+  console.log('🎯 Seeding action items...');
+  const actionTemplates = [
+    { title: 'Automate service-account credential rotation', description: 'Move all AI Flow and PRIME service accounts onto automated rotation with expiry alerting 14 days ahead.', priority: 'Critical', status: 'in_progress', days: 14, tags: ['security', 'reliability'] },
+    { title: 'Add schema compatibility gate to data pipeline', description: 'Block upstream deployments that remove or retype fields consumed downstream, with automated consumer-impact detection.', priority: 'High', status: 'in_progress', days: 21, tags: ['data-integrity'] },
+    { title: 'Complete automatic FIX feed failover for ATR', description: 'Finish automatic failover on handler lag and schedule a quarterly failover exercise.', priority: 'Critical', status: 'pending', days: 30, tags: ['availability', 'trading'] },
+    { title: 'Introduce demand-aware autoscaling for peak windows', description: 'Pre-scale feed handlers and connection pools ahead of market open, month-end close, and partner batch windows.', priority: 'High', status: 'pending', days: 45, tags: ['capacity'] },
+    { title: 'Document GL reconciliation runbook and cross-train', description: 'Reduce key-person concentration on FMIS month-end close by documenting the runbook and training a secondary responder.', priority: 'Medium', status: 'pending', days: 60, tags: ['resilience', 'finance'] },
+    { title: 'Rebalance workload for engineers above 90% capacity', description: 'Redistribute incoming tickets away from saturated engineers to protect SLA compliance.', priority: 'High', status: 'in_progress', days: 10, tags: ['workload'] },
+    { title: 'Add GPU memory alerting to inference nodes', description: 'Alert on sustained memory growth per inference node before the orchestrator terminates the worker.', priority: 'Medium', status: 'completed', days: -6, tags: ['monitoring'] },
+    { title: 'Standardise rounding precision across finance pipelines', description: 'Align sub-ledger export and GL import precision to prevent reconciliation drift at month-end close.', priority: 'High', status: 'completed', days: -12, tags: ['finance', 'data-integrity'] },
+  ];
+
+  for (const tpl of actionTemplates) {
+    const assignee = getRandomElement(users);
+    await prisma.actionItem.create({
+      data: {
+        title: tpl.title,
+        description: tpl.description,
+        assignee: assignee.name,
+        assigneeEmail: assignee.email,
+        assigneeUserId: assignee.id,
+        createdById: users[0].id,
+        dueDate: addDays(new Date(), tpl.days),
+        priority: tpl.priority,
+        status: tpl.status,
+        tags: JSON.stringify(tpl.tags),
+        dependencies: JSON.stringify([]),
+      },
+    });
+  }
+  console.log(`✅ Seeded ${actionTemplates.length} action items`);
 
   // Create default provider configs
   console.log('⚙️ Creating provider configurations...');

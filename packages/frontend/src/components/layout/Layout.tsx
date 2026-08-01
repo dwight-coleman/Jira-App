@@ -22,6 +22,9 @@ import {
   DarkModeOutlined as DarkIcon,
   LightModeOutlined as LightIcon,
   MonitorHeartOutlined as LogoIcon,
+  ShieldOutlined as RiskIcon,
+  TaskAltOutlined as ActionIcon,
+  SearchOutlined as SearchIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../hooks/useAuthStore';
 import { useResolvedMode, useThemeStore } from '../../hooks/useThemeMode';
@@ -29,6 +32,7 @@ import { ticketApi } from '../../services/api';
 import { layout } from '../../theme/tokens';
 import StatusPill from '../ui/StatusPill';
 import EmptyState from '../ui/EmptyState';
+import ErrorBoundary from '../common/ErrorBoundary';
 
 const navSections = [
   {
@@ -44,6 +48,13 @@ const navSections = [
     ],
   },
   {
+    label: 'Governance',
+    items: [
+      { text: 'Risk Register', path: '/risks', icon: <RiskIcon /> },
+      { text: 'Action Items', path: '/action-items', icon: <ActionIcon /> },
+    ],
+  },
+  {
     label: 'Briefing',
     items: [
       { text: 'Reports', path: '/reports', icon: <ReportsIcon /> },
@@ -51,6 +62,11 @@ const navSections = [
     ],
   },
 ];
+
+/** Fires the same shortcut the CommandPalette listens for. */
+function openCommandPalette() {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
+}
 
 export default function Layout() {
   const location = useLocation();
@@ -84,41 +100,54 @@ export default function Layout() {
 
   const sidebar = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: 'surface.raised' }}>
-      {/* Brand */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.25,
-          height: layout.topBarHeight,
-          px: collapsed ? 0 : 2,
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-          flexShrink: 0,
-        }}
-      >
+      {/* Brand — also the "home" affordance back to the dashboard. */}
+      <Tooltip title={collapsed ? 'Go to dashboard' : ''} placement="right">
         <Box
+          component={NavLink}
+          to="/dashboard"
+          aria-label="Jira Executive Reporting — go to dashboard"
+          onClick={() => setMobileOpen(false)}
           sx={{
-            width: 28, height: 28, borderRadius: 1.5, flexShrink: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            bgcolor: 'primary.main', color: 'primary.contrastText',
-            '& svg': { fontSize: 17 },
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.25,
+            height: layout.topBarHeight,
+            px: collapsed ? 0 : 2,
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            flexShrink: 0,
+            textDecoration: 'none',
+            color: 'inherit',
+            transition: 'background-color 120ms ease',
+            '&:hover': { bgcolor: 'action.hover' },
+            '&:hover .brand-mark': { transform: 'scale(1.06)' },
           }}
         >
-          <LogoIcon />
-        </Box>
-        {!collapsed && (
-          <Box sx={{ minWidth: 0 }}>
-            <Typography sx={{ fontSize: '0.8125rem', fontWeight: 700, lineHeight: 1.25, letterSpacing: '-0.01em' }} noWrap>
-              Jira Executive
-            </Typography>
-            <Typography sx={{ fontSize: '0.6875rem', color: 'text.muted', lineHeight: 1.25 }} color="text.secondary" noWrap>
-              Reporting Platform
-            </Typography>
+          <Box
+            className="brand-mark"
+            sx={{
+              width: 28, height: 28, borderRadius: 1.5, flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              bgcolor: 'primary.main', color: 'primary.contrastText',
+              transition: 'transform 140ms ease',
+              '& svg': { fontSize: 17 },
+            }}
+          >
+            <LogoIcon />
           </Box>
-        )}
-      </Box>
+          {!collapsed && (
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontSize: '0.8125rem', fontWeight: 700, lineHeight: 1.25, letterSpacing: '-0.01em' }} noWrap>
+                Jira Executive
+              </Typography>
+              <Typography sx={{ fontSize: '0.6875rem', lineHeight: 1.25 }} color="text.secondary" noWrap>
+                Reporting Platform
+              </Typography>
+            </Box>
+          )}
+        </Box>
+      </Tooltip>
 
       {/* Navigation */}
       <Box sx={{ flexGrow: 1, overflowY: 'auto', overflowX: 'hidden', py: 1.5 }}>
@@ -235,6 +264,34 @@ export default function Layout() {
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {/* Search affordance — discoverability for the ⌘K palette. */}
+            <Box
+              onClick={openCommandPalette}
+              role="button"
+              tabIndex={0}
+              aria-label="Open search (Command K)"
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openCommandPalette(); } }}
+              sx={{
+                display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 1,
+                px: 1.25, height: 30, mr: 0.5, cursor: 'pointer',
+                borderRadius: 1.5, border: '1px solid', borderColor: 'divider',
+                bgcolor: 'surface.sunken', color: 'text.secondary',
+                transition: 'border-color 120ms ease, color 120ms ease',
+                '&:hover': { borderColor: 'surface.borderStrong', color: 'text.primary' },
+              }}
+            >
+              <SearchIcon sx={{ fontSize: 15 }} />
+              <Typography sx={{ fontSize: '0.75rem' }}>Search…</Typography>
+              <Box
+                sx={{
+                  px: 0.5, py: 0.125, borderRadius: 0.75, border: '1px solid', borderColor: 'divider',
+                  bgcolor: 'background.paper', fontSize: '0.625rem', fontWeight: 700, lineHeight: 1.5,
+                }}
+              >
+                ⌘K
+              </Box>
+            </Box>
+
             <Tooltip title={resolvedMode === 'dark' ? 'Light mode' : 'Dark mode'}>
               <IconButton size="small" onClick={() => setThemeMode(resolvedMode === 'dark' ? 'light' : 'dark')}>
                 {resolvedMode === 'dark' ? <LightIcon sx={{ fontSize: 19 }} /> : <DarkIcon sx={{ fontSize: 19 }} />}
@@ -323,7 +380,10 @@ export default function Layout() {
           minHeight: `calc(100vh - ${layout.topBarHeight}px)`,
         }}
       >
-        <Outlet />
+        {/* Keyed on pathname so navigating away from a crashed view clears it. */}
+        <ErrorBoundary resetKey={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </Box>
 
       {/* Account menu */}

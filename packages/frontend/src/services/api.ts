@@ -440,4 +440,70 @@ export const userApi = {
     api.get<User[]>('/users'),
 };
 
+export interface OperationalRisk {
+  id: string;
+  title: string;
+  description: string;
+  likelihood: string;
+  impact: string;
+  riskScore: number;
+  category: string;
+  affectedApplications: string;
+  affectedTeams: string;
+  mitigation: string;
+  owner: string;
+  status: string;
+  identifiedAt: string;
+  lastReviewedAt: string;
+  nextReviewAt: string;
+}
+
+export interface RecurringIssue {
+  id: string;
+  title: string;
+  description: string;
+  pattern: string;
+  frequency: number;
+  affectedApplications: string;
+  affectedTickets: string;
+  rootCause: string;
+  currentWorkaround: string;
+  permanentFix: string;
+  fixStatus: string;
+  fixOwner: string;
+  fixTargetDate: string;
+  businessImpact: string;
+  slaImpact: number;
+  costEstimate: number;
+  aiConfidence: number;
+  identifiedAt: string;
+  lastOccurrence: string;
+}
+
+export interface ActionItem {
+  id: string;
+  title: string;
+  description: string;
+  assignee: string;
+  assigneeEmail: string;
+  dueDate: string;
+  priority: string;
+  status: string;
+  dependencies: string;
+  tags: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const riskApi = {
+  getRisks: () => api.get<OperationalRisk[]>('/risks'),
+  getRecurringIssues: () => api.get<RecurringIssue[]>('/recurring-issues'),
+};
+
+export const actionItemApi = {
+  getAll: () => api.get<ActionItem[]>('/action-items'),
+  updateStatus: (id: string, status: string) =>
+    api.patch<ActionItem>(`/action-items/${id}`, { status }),
+};
+
 export default api;

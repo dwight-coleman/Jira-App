@@ -1,5 +1,6 @@
-import { Box, Grid, Skeleton, Typography, useTheme, Divider } from '@mui/material';
+import { Box, Grid, Skeleton, Typography, useTheme, Divider, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
 import { Theme } from '@mui/material/styles';
+import { useNavigate } from 'react-router-dom';
 import {
   ConfirmationNumberOutlined as TicketIcon,
   InboxOutlined as OpenIcon,
@@ -21,6 +22,7 @@ import {
 } from 'recharts';
 import { dashboardApi } from '../../services/api';
 import PageHeader from '../../components/common/PageHeader';
+import { useUrlFilter } from '../../hooks/useUrlFilter';
 import SectionCard from '../../components/ui/SectionCard';
 import StatTile from '../../components/ui/StatTile';
 import ChartTooltip from '../../components/ui/ChartTooltip';
@@ -44,8 +46,18 @@ function trendDelta(points: { value: number }[] | undefined) {
   return Math.round(((curr - prev) / prev) * 100);
 }
 
+/** How many trailing months of trend history each range shows. */
+const RANGES = [
+  { key: '3m', label: '3M', months: 3 },
+  { key: '6m', label: '6M', months: 6 },
+  { key: 'all', label: 'All', months: 99 },
+] as const;
+
 export default function Dashboard() {
   const theme = useTheme();
+  const navigate = useNavigate();
+  const [range, setRange] = useUrlFilter('range', '6m');
+  const months = RANGES.find((r) => r.key === range)?.months ?? 6;
   const isDark = theme.palette.mode === 'dark';
   const chrome = chartChrome(isDark);
   const palette = categoricalPalette(isDark);
@@ -81,8 +93,12 @@ export default function Dashboard() {
     queryFn: () => dashboardApi.getSLACompliance().then((r) => r.data),
   });
 
-  const volumeData = (volumeTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
-  const slaData = (slaTrend ?? []).map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }));
+  const volumeData = (volumeTrend ?? [])
+    .map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }))
+    .slice(-months);
+  const slaData = (slaTrend ?? [])
+    .map((p) => ({ ...p, label: format(new Date(p.month as string), 'MMM') }))
+    .slice(-months);
 
   const slaValue = Number(kpis?.slaCompliance ?? 0);
   const slaHealthy = slaValue >= SLA_TARGET;
@@ -114,6 +130,27 @@ export default function Dashboard() {
               color={slaHealthy ? 'success' : 'error'}
             />
           )
+        }
+        actions={
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={range}
+            onChange={(_, v) => v && setRange(v)}
+            sx={{
+              '& .MuiToggleButton-root': {
+                px: 1.5, py: 0.5, fontSize: '0.75rem', fontWeight: 600, textTransform: 'none',
+                borderColor: 'divider', color: 'text.secondary',
+                '&.Mui-selected': { bgcolor: 'action.selected', color: 'primary.main' },
+              },
+            }}
+          >
+            {RANGES.map((r) => (
+              <ToggleButton key={r.key} value={r.key} aria-label={`Show ${r.label} of history`}>
+                {r.label}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
         }
       />
 
@@ -215,7 +252,12 @@ export default function Dashboard() {
       {/* Distributions */}
       <Grid container spacing={2}>
         <Grid item xs={12} lg={5}>
-          <SectionCard title="Volume by Application" eyebrow="Distribution" icon={<AppsIcon />}>
+          <SectionCard
+            title="Volume by Application"
+            eyebrow="Distribution"
+            icon={<AppsIcon />}
+            actions={<Typography variant="caption" color="text.secondary">Click to drill down</Typography>}
+          >
             {appLoading ? (
               <Skeleton variant="rounded" height={252} />
             ) : (
@@ -225,7 +267,15 @@ export default function Dashboard() {
                   <XAxis type="number" allowDecimals={false} {...axis} />
                   <YAxis dataKey="application" type="category" width={62} {...axis} />
                   <RTooltip content={<ChartTooltip seriesLabel="Tickets" />} cursor={{ fill: theme.palette.action.hover }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={14}>
+                  <Bar
+                    dataKey="count"
+                    radius={[0, 4, 4, 0]}
+                    barSize={14}
+                    cursor="pointer"
+                    onClick={(d: { application?: string }) =>
+                      d?.application && navigate(`/tickets?application=${encodeURIComponent(d.application)}`)
+                    }
+                  >
                     {(byApplication ?? []).map((e, i) => (
                       <Cell key={e.application ?? i} fill={palette[i % palette.length]} />
                     ))}
@@ -264,13 +314,22 @@ export default function Dashboard() {
                 <Divider sx={{ my: 1.5 }} />
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
                   {(byPriority ?? []).map((e) => (
-                    <Box key={e.priority} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875, minWidth: 0 }}>
-                        <Box sx={{ width: 7, height: 7, borderRadius: 0.5, flexShrink: 0, bgcolor: toneHex(theme, priorityColor(e.priority as string)) }} />
-                        <Typography variant="caption" color="text.secondary" noWrap>{e.priority}</Typography>
+                    <Tooltip key={e.priority} title={`View ${e.priority} tickets`} placement="left">
+                      <Box
+                        onClick={() => navigate(`/tickets?priority=${encodeURIComponent(e.priority as string)}`)}
+                        sx={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1,
+                          cursor: 'pointer', borderRadius: 1, px: 0.75, py: 0.375, mx: -0.75,
+                          '&:hover': { bgcolor: 'action.hover' },
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875, minWidth: 0 }}>
+                          <Box sx={{ width: 7, height: 7, borderRadius: 0.5, flexShrink: 0, bgcolor: toneHex(theme, priorityColor(e.priority as string)) }} />
+                          <Typography variant="caption" color="text.secondary" noWrap>{e.priority}</Typography>
+                        </Box>
+                        <Typography variant="caption" className="tabular-nums" sx={{ fontWeight: 650 }}>{e.count}</Typography>
                       </Box>
-                      <Typography variant="caption" className="tabular-nums" sx={{ fontWeight: 650 }}>{e.count}</Typography>
-                    </Box>
+                    </Tooltip>
                   ))}
                 </Box>
               </Box>
@@ -290,15 +349,20 @@ export default function Dashboard() {
                   return rows.map((r) => {
                     const hex = toneHex(theme, statusColor(r.status as string));
                     return (
-                      <Box key={r.status as string}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                          <Typography variant="caption" color="text.secondary" noWrap>{r.status}</Typography>
-                          <Typography variant="caption" className="tabular-nums" sx={{ fontWeight: 650 }}>{r.count}</Typography>
+                      <Tooltip key={r.status as string} title={`View ${r.status} tickets`} placement="left">
+                        <Box
+                          onClick={() => navigate(`/tickets?status=${encodeURIComponent(r.status as string)}`)}
+                          sx={{ cursor: 'pointer', borderRadius: 1, px: 0.75, py: 0.375, mx: -0.75, '&:hover': { bgcolor: 'action.hover' } }}
+                        >
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary" noWrap>{r.status}</Typography>
+                            <Typography variant="caption" className="tabular-nums" sx={{ fontWeight: 650 }}>{r.count}</Typography>
+                          </Box>
+                          <Box sx={{ height: 6, borderRadius: 999, bgcolor: 'action.hover', overflow: 'hidden' }}>
+                            <Box sx={{ width: `${(Number(r.count) / max) * 100}%`, height: '100%', borderRadius: 999, bgcolor: hex, transition: 'width 400ms ease' }} />
+                          </Box>
                         </Box>
-                        <Box sx={{ height: 6, borderRadius: 999, bgcolor: 'action.hover', overflow: 'hidden' }}>
-                          <Box sx={{ width: `${(Number(r.count) / max) * 100}%`, height: '100%', borderRadius: 999, bgcolor: hex, transition: 'width 400ms ease' }} />
-                        </Box>
-                      </Box>
+                      </Tooltip>
                     );
                   });
                 })()}

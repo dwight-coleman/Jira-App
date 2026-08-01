@@ -351,6 +351,61 @@ app.post('/api/reports/monthly', async (req, res) => {
   }
 });
 
+app.get('/api/risks', async (req, res) => {
+  try {
+    const risks = await prisma.operationalRisk.findMany({
+      orderBy: [{ riskScore: 'desc' }, { identifiedAt: 'desc' }],
+    });
+    res.json(risks);
+  } catch (error) {
+    console.error('Error fetching risks:', error);
+    res.status(500).json({ error: 'Failed to fetch risks' });
+  }
+});
+
+app.get('/api/recurring-issues', async (req, res) => {
+  try {
+    const issues = await prisma.recurringIssue.findMany({
+      orderBy: [{ slaImpact: 'desc' }, { frequency: 'desc' }],
+    });
+    res.json(issues);
+  } catch (error) {
+    console.error('Error fetching recurring issues:', error);
+    res.status(500).json({ error: 'Failed to fetch recurring issues' });
+  }
+});
+
+app.get('/api/action-items', async (req, res) => {
+  try {
+    const items = await prisma.actionItem.findMany({ orderBy: { dueDate: 'asc' } });
+    res.json(items);
+  } catch (error) {
+    console.error('Error fetching action items:', error);
+    res.status(500).json({ error: 'Failed to fetch action items' });
+  }
+});
+
+app.patch('/api/action-items/:id', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ['pending', 'in_progress', 'completed', 'blocked'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${allowed.join(', ')}` });
+    }
+    const existing = await prisma.actionItem.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Action item not found' });
+
+    const updated = await prisma.actionItem.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error('Error updating action item:', error);
+    res.status(500).json({ error: 'Failed to update action item' });
+  }
+});
+
 app.get('/api/settings', async (req, res) => {
   try {
     const settings = await prisma.settings.findUnique({ where: { id: 'singleton' } });

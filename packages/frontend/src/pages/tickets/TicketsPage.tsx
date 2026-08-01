@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Box, Typography, Avatar, Card, TextField, InputAdornment, MenuItem,
   Button, Stack, Tooltip, IconButton,
@@ -18,6 +18,9 @@ import { priorityColor, statusColor, slaColor } from '../../utils/chipColors';
 import PageHeader from '../../components/common/PageHeader';
 import StatusPill from '../../components/ui/StatusPill';
 import EmptyState from '../../components/ui/EmptyState';
+import { useUrlFilter, useClearUrlFilters } from '../../hooks/useUrlFilter';
+
+const FILTER_KEYS = ['q', 'application', 'priority', 'status'];
 
 const ALL = 'All';
 
@@ -113,10 +116,13 @@ const columns: GridColDef[] = [
 
 export default function TicketsPage() {
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
-  const [application, setApplication] = useState(ALL);
-  const [priority, setPriority] = useState(ALL);
-  const [status, setStatus] = useState(ALL);
+  // Filters live in the URL so any filtered view can be copied and shared, and
+  // so dashboard drill-downs land on the right slice.
+  const [search, setSearch] = useUrlFilter('q', '');
+  const [application, setApplication] = useUrlFilter('application', ALL);
+  const [priority, setPriority] = useUrlFilter('priority', ALL);
+  const [status, setStatus] = useUrlFilter('status', ALL);
+  const clearUrlFilters = useClearUrlFilters(FILTER_KEYS);
 
   const { data: tickets, isLoading } = useQuery({
     queryKey: ['tickets'],
@@ -149,7 +155,7 @@ export default function TicketsPage() {
   }, [tickets, search, application, priority, status]);
 
   const filtersActive = search !== '' || application !== ALL || priority !== ALL || status !== ALL;
-  const clearFilters = () => { setSearch(''); setApplication(ALL); setPriority(ALL); setStatus(ALL); };
+  const clearFilters = clearUrlFilters;
   const breachedCount = filtered.filter((t) => t.sla?.status === 'Breached').length;
 
   return (

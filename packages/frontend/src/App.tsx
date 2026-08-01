@@ -11,6 +11,9 @@ import EngineersPage from './pages/engineers/EngineersPage';
 import ApplicationsPage from './pages/applications/ApplicationsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import SettingsPage from './pages/settings/SettingsPage';
+import RisksPage from './pages/risks/RisksPage';
+import ActionItemsPage from './pages/actions/ActionItemsPage';
+import CommandPalette from './components/common/CommandPalette';
 import { useAuthStore } from './hooks/useAuthStore';
 import { userApi } from './services/api';
 
@@ -45,20 +48,26 @@ function AppRoutes() {
       </Box>
     );
   }
+
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/tickets" element={<TicketsPage />} />
-        <Route path="/tickets/:id" element={<TicketDetailPage />} />
-        <Route path="/engineers" element={<EngineersPage />} />
-        <Route path="/applications" element={<ApplicationsPage />} />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-      </Route>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <>
+      <CommandPalette />
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/tickets" element={<TicketsPage />} />
+          <Route path="/tickets/:id" element={<TicketDetailPage />} />
+          <Route path="/applications" element={<ApplicationsPage />} />
+          <Route path="/engineers" element={<EngineersPage />} />
+          <Route path="/risks" element={<RisksPage />} />
+          <Route path="/action-items" element={<ActionItemsPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+        </Route>
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </>
   );
 }
 
